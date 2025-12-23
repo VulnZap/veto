@@ -43,6 +43,21 @@ import type {
 export type VetoMode = 'strict' | 'log';
 
 /**
+ * Wrapped handler function type.
+ */
+export type WrappedHandler = (args: Record<string, unknown>) => Promise<unknown>;
+
+/**
+ * Result of wrapping tools with Veto.
+ */
+export interface WrappedTools {
+  /** Tool definitions (schemas) to pass to AI models */
+  definitions: ToolDefinition[];
+  /** Wrapped handler functions keyed by tool name */
+  implementations: Record<string, WrappedHandler>;
+}
+
+/**
  * Parsed veto.config.yaml structure.
  */
 interface VetoConfigFile {
@@ -579,12 +594,12 @@ export class Veto {
   /**
    * Wrap tools for use with an AI provider.
    *
-   * If tools have handlers (ExecutableTool), the handlers are wrapped to
-   * automatically validate calls before execution. If validation fails,
-   * the handler throws a ToolCallDeniedError.
+   * Returns an object containing:
+   * - `definitions`: Tool schemas to pass to the AI model
+   * - `implementations`: Object with wrapped handler functions keyed by tool name
    *
-   * @param tools - Tools to wrap
-   * @returns Tools with wrapped handlers (if applicable)
+   * @param tools - Tools to wrap (must have handlers)
+   * @returns Object with toolDefinitions and toolImplementations
    *
    * @example
    * ```typescript
@@ -597,22 +612,33 @@ export class Veto {
    * ];
    *
    * const veto = await Veto.init();
-   * const wrappedTools = veto.wrapTools(tools);
+   * const { definitions, implementations } = veto.wrapTools(tools);
    *
-   * // When executed, validation happens automatically
-   * await wrappedTools[0].handler({ path: '/etc/passwd' }); // Throws if blocked
+   * // Pass definitions to AI model
+   * const response = await openai.chat.completions.create({
+   *   tools: toOpenAITools(definitions),
+   *   ...
+   * });
+   *
+   * // Execute tool calls using implementations
+   * const result = await implementations.read_file({ path: '/home/user/file.txt' });
    * ```
    */
-  wrapTools<T extends ToolDefinition>(tools: readonly T[]): T[] {
-    const wrappedTools: T[] = [];
+  wrapTools(tools: readonly ToolDefinition[]): WrappedTools {
+    const definitions: ToolDefinition[] = [];
+    const implementations: Record<string, WrappedHandler> = {};
 
     for (const tool of tools) {
       this.registeredTools.set(tool.name, tool);
 
+      // Extract definition (without handler)
+      const { handler: _, ...definition } = tool as ToolDefinition & { handler?: unknown };
+      definitions.push(definition as ToolDefinition);
+
       if (isExecutableTool(tool)) {
         // Wrap the handler with automatic validation
         const originalHandler = tool.handler;
-        const wrappedHandler = async (args: Record<string, unknown>) => {
+        const wrappedHandler: WrappedHandler = async (args: Record<string, unknown>) => {
           const result = await this.validateToolCall({
             id: generateToolCallId(),
             name: tool.name,
@@ -631,9 +657,7 @@ export class Veto {
           return originalHandler(result.finalArguments ?? args);
         };
 
-        wrappedTools.push({ ...tool, handler: wrappedHandler } as T);
-      } else {
-        wrappedTools.push(tool);
+        implementations[tool.name] = wrappedHandler;
       }
     }
 
@@ -642,7 +666,10 @@ export class Veto {
       names: tools.map((t) => t.name),
     });
 
-    return wrappedTools;
+    return {
+      definitions,
+      implementations,
+    };
   }
 
   /**

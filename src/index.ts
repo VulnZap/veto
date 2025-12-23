@@ -8,27 +8,24 @@
  *
  * @example
  * ```typescript
- * import { Veto } from 'veto';
+ * import { Veto, toOpenAITools } from 'veto';
  *
- * // Step 1: Initialize Veto (loads config from ./veto automatically)
+ * // Initialize Veto
  * const veto = await Veto.init();
  *
- * // Step 2: Wrap your tools
- * const wrappedTools = veto.wrapTools(myTools);
+ * // Wrap your tools
+ * const { definitions, implementations } = veto.wrapTools(myTools);
  *
- * // Step 3: Pass wrappedTools to your AI provider...
- *
- * // Step 4: When the model makes a tool call, validate it
- * const result = await veto.validateToolCall({
- *   id: 'call_123',
- *   name: 'read_file',
- *   arguments: { path: '/etc/passwd' }
+ * // Pass definitions to AI provider
+ * const response = await openai.chat.completions.create({
+ *   tools: toOpenAITools(definitions),
+ *   messages: [...]
  * });
  *
- * if (result.allowed) {
- *   // Execute the tool
- * } else {
- *   console.log('Blocked:', result.validationResult.reason);
+ * // Execute tool calls using implementations (validation is automatic)
+ * for (const call of response.choices[0].message.tool_calls) {
+ *   const args = JSON.parse(call.function.arguments);
+ *   const result = await implementations[call.function.name](args);
  * }
  * ```
  *
@@ -36,7 +33,14 @@
  */
 
 // Main export
-export { Veto, ToolCallDeniedError, type VetoOptions, type VetoMode } from './core/veto.js';
+export {
+  Veto,
+  ToolCallDeniedError,
+  type VetoOptions,
+  type VetoMode,
+  type WrappedTools,
+  type WrappedHandler,
+} from './core/veto.js';
 
 // Core types
 export type {

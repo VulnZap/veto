@@ -178,15 +178,28 @@ rules:
   });
 
   describe('wrapTools', () => {
-    it('should return tools without handlers unchanged', async () => {
+    it('should return definitions and implementations', async () => {
+      const handler = vi.fn().mockResolvedValue('result');
+      const tools = [
+        {
+          name: 'test_tool',
+          description: 'Test tool',
+          inputSchema: { type: 'object' as const },
+          handler,
+        },
+      ];
+
       const veto = await Veto.init({ configDir: VETO_DIR });
+      const { definitions, implementations } = veto.wrapTools(tools);
 
-      const wrapped = veto.wrapTools(sampleTools);
+      // Definitions should not have handlers
+      expect(definitions).toHaveLength(1);
+      expect(definitions[0].name).toBe('test_tool');
+      expect((definitions[0] as Record<string, unknown>).handler).toBeUndefined();
 
-      expect(wrapped).toHaveLength(2);
-      expect(wrapped[0].name).toBe('read_file');
-      expect(wrapped[1].name).toBe('write_file');
-      expect(wrapped).toEqual(sampleTools);
+      // Implementations should have the wrapped handler
+      expect(implementations).toHaveProperty('test_tool');
+      expect(typeof implementations.test_tool).toBe('function');
     });
 
     it('should track registered tools', async () => {
@@ -210,13 +223,10 @@ rules:
       ];
 
       const veto = await Veto.init({ configDir: VETO_DIR });
-      const wrapped = veto.wrapTools(executableTools);
-
-      // Handler should be wrapped (different function)
-      expect(wrapped[0].handler).not.toBe(handler);
+      const { implementations } = veto.wrapTools(executableTools);
 
       // Execute - should call original handler (no rules = allowed)
-      const result = await wrapped[0].handler({ test: 'value' });
+      const result = await implementations.test_tool({ test: 'value' });
 
       expect(result).toBe('result');
       expect(handler).toHaveBeenCalledWith({ test: 'value' });
@@ -259,15 +269,23 @@ rules:
       ];
 
       const veto = await Veto.init({ configDir: VETO_DIR });
-      const wrapped = veto.wrapTools(executableTools);
+      const { implementations } = veto.wrapTools(executableTools);
 
       // Execute - should throw ToolCallDeniedError
-      await expect(wrapped[0].handler({ test: 'value' })).rejects.toThrow(
+      await expect(implementations.blocked_tool({ test: 'value' })).rejects.toThrow(
         ToolCallDeniedError
       );
 
       // Original handler should not be called
       expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should return empty implementations for tools without handlers', async () => {
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      const { definitions, implementations } = veto.wrapTools(sampleTools);
+
+      expect(definitions).toHaveLength(2);
+      expect(Object.keys(implementations)).toHaveLength(0);
     });
   });
 

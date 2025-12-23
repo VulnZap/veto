@@ -5,8 +5,9 @@ A guardrail system for AI agent tool calls. Veto intercepts and validates tool c
 ## How It Works
 
 1. Define your tools with handlers
-2. Wrap them with Veto
-3. Use the wrapped tools normally - validation happens automatically
+2. Wrap them with Veto to get `definitions` and `implementations`
+3. Pass `definitions` to the AI model
+4. Execute tool calls using `implementations` - validation happens automatically
 
 When a tool is executed, Veto:
 1. Looks up applicable rules from your YAML configuration
@@ -34,7 +35,7 @@ This creates a `veto/` directory with configuration and default rules.
 ### 2. Define your tools and wrap them
 
 ```typescript
-import { Veto } from 'veto';
+import { Veto, ToolCallDeniedError } from 'veto';
 
 // Define tools with handlers
 const tools = [
@@ -70,11 +71,11 @@ const tools = [
 
 // Initialize Veto and wrap tools
 const veto = await Veto.init();
-const wrappedTools = veto.wrapTools(tools);
+const { definitions, implementations } = veto.wrapTools(tools);
 
-// Use wrapped tools - validation happens automatically
+// Use implementations - validation happens automatically
 try {
-  const content = await wrappedTools[0].handler({ path: '/home/user/file.txt' });
+  const content = await implementations.read_file({ path: '/home/user/file.txt' });
   console.log(content);
 } catch (error) {
   if (error instanceof ToolCallDeniedError) {
@@ -230,31 +231,31 @@ rules:
 
 ## Provider Integration
 
-For tools that are just definitions (no handlers), use the provider adapters and validate manually:
-
 ### OpenAI
 
 ```typescript
 import { Veto, toOpenAITools, fromOpenAIToolCall } from 'veto';
 
 const veto = await Veto.init();
-const tools = veto.wrapTools(myToolDefinitions);
-const openAITools = toOpenAITools(tools);
+const { definitions, implementations } = veto.wrapTools(myTools);
 
+// Pass definitions to OpenAI
 const response = await openai.chat.completions.create({
   model: 'gpt-4',
-  tools: openAITools,
+  tools: toOpenAITools(definitions),
   messages: [...]
 });
 
+// Execute tool calls using implementations
 for (const call of response.choices[0].message.tool_calls ?? []) {
-  const toolCall = fromOpenAIToolCall(call);
-  const result = await veto.validateToolCall(toolCall);
-
-  if (result.allowed) {
-    // Execute the tool
-  } else {
-    console.log('Blocked:', result.validationResult.reason);
+  const args = JSON.parse(call.function.arguments);
+  try {
+    const result = await implementations[call.function.name](args);
+    console.log('Result:', result);
+  } catch (error) {
+    if (error instanceof ToolCallDeniedError) {
+      console.log('Blocked:', error.reason);
+    }
   }
 }
 ```
@@ -265,22 +266,25 @@ for (const call of response.choices[0].message.tool_calls ?? []) {
 import { Veto, toAnthropicTools, fromAnthropicToolUse } from 'veto';
 
 const veto = await Veto.init();
-const tools = veto.wrapTools(myToolDefinitions);
-const anthropicTools = toAnthropicTools(tools);
+const { definitions, implementations } = veto.wrapTools(myTools);
 
+// Pass definitions to Anthropic
 const response = await anthropic.messages.create({
   model: 'claude-3-opus-20240229',
-  tools: anthropicTools,
+  tools: toAnthropicTools(definitions),
   messages: [...]
 });
 
+// Execute tool calls using implementations
 for (const block of response.content) {
   if (block.type === 'tool_use') {
-    const toolCall = fromAnthropicToolUse(block);
-    const result = await veto.validateToolCall(toolCall);
-
-    if (!result.allowed) {
-      // Handle blocked call
+    try {
+      const result = await implementations[block.name](block.input);
+      console.log('Result:', result);
+    } catch (error) {
+      if (error instanceof ToolCallDeniedError) {
+        console.log('Blocked:', error.reason);
+      }
     }
   }
 }
@@ -305,15 +309,18 @@ const veto = await Veto.init({
 
 ### veto.wrapTools(tools)
 
-Wrap tools with automatic validation. If tools have handlers, validation runs before each execution.
+Wrap tools and return definitions and implementations.
 
 ```typescript
-const wrappedTools = veto.wrapTools(tools);
+const { definitions, implementations } = veto.wrapTools(tools);
+
+// definitions: Tool schemas to pass to AI models (no handlers)
+// implementations: Object with wrapped handler functions keyed by tool name
 ```
 
 ### veto.validateToolCall(call)
 
-Manually validate a tool call (for tools without handlers).
+Manually validate a tool call (for custom execution flows).
 
 ```typescript
 const result = await veto.validateToolCall({
