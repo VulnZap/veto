@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "benchmark": "node dist/benchmark/cli.js",
+    "benchmark:dev": "tsx src/benchmark/cli.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -34,6 +36,7 @@
     "@types/node": "^20.10.0",
     "@vitest/coverage-v8": "^4.0.16",
     "openai": "^4.77.0",
+    "tsx": "^4.7.0",
     "typescript": "^5.3.0",
     "vitest": "^4.0.16"
   },
@@ -80,6 +83,10 @@
     "./kernel": {
       "types": "./dist/kernel/index.d.ts",
       "import": "./dist/kernel/index.js"
+    },
+    "./benchmark": {
+      "types": "./dist/benchmark/index.d.ts",
+      "import": "./dist/benchmark/index.js"
     }
   },
   "dependencies": {
