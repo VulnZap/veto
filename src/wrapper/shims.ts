@@ -1,49 +1,78 @@
 // src/wrapper/shims.ts
 
-import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'fs';
-import { join, dirname } from 'path';
+import { mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { join } from 'path';
 import { tmpdir } from 'os';
 import type { Policy } from '../types.js';
 
-const ACTION_COMMANDS: Record<string, string[]> = {
+const IS_WINDOWS = process.platform === 'win32';
+
+// Unix command mappings
+const UNIX_COMMANDS: Record<string, string[]> = {
   delete: ['rm', 'unlink', 'rmdir'],
   modify: ['mv', 'cp', 'touch', 'chmod', 'chown', 'tee'],
-  execute: [
-    'node',
-    'python',
-    'python3',
-    'bash',
-    'sh',
-    'npx',
-    'pnpm',
-    'npm',
-    'yarn',
-  ],
+  execute: ['node', 'python', 'python3', 'bash', 'sh', 'npx', 'pnpm', 'npm', 'yarn'],
   read: ['cat', 'less', 'head', 'tail', 'more'],
+};
+
+// Windows command mappings (PowerShell equivalents)
+const WINDOWS_COMMANDS: Record<string, string[]> = {
+  delete: ['Remove-Item', 'del', 'rd', 'rmdir'],
+  modify: ['Move-Item', 'Copy-Item', 'mv', 'cp', 'Set-Content'],
+  execute: ['node', 'python', 'npx', 'pnpm', 'npm', 'yarn'],
+  read: ['Get-Content', 'cat', 'type'],
 };
 
 export function createWrapperDir(port: number, policy: Policy): string {
   const dir = mkdtempSync(join(tmpdir(), 'veto-'));
 
-  // Write the Node shim helper script
+  // Write the Node shim helper script (cross-platform)
   const shimHelper = createNodeShimHelper(port, policy.action);
   const shimHelperPath = join(dir, '_veto_check.mjs');
   writeFileSync(shimHelperPath, shimHelper, { mode: 0o755 });
 
-  // Create shims for relevant commands
-  const commands = ACTION_COMMANDS[policy.action] || [];
+  if (IS_WINDOWS) {
+    createWindowsShims(dir, shimHelperPath, policy);
+  } else {
+    createUnixShims(dir, shimHelperPath, policy);
+  }
+
+  return dir;
+}
+
+function createUnixShims(dir: string, shimHelperPath: string, policy: Policy): void {
+  const commands = UNIX_COMMANDS[policy.action] || [];
   for (const cmd of commands) {
-    const script = createShim(cmd, shimHelperPath);
+    const script = createUnixShim(cmd, shimHelperPath);
     writeFileSync(join(dir, cmd), script, { mode: 0o755 });
   }
 
   // Always wrap git for delete/modify actions
   if (policy.action === 'delete' || policy.action === 'modify') {
-    const gitShim = createGitShim(shimHelperPath, policy.action);
+    const gitShim = createGitShim(shimHelperPath);
     writeFileSync(join(dir, 'git'), gitShim, { mode: 0o755 });
   }
+}
 
-  return dir;
+function createWindowsShims(dir: string, shimHelperPath: string, policy: Policy): void {
+  const commands = WINDOWS_COMMANDS[policy.action] || [];
+  
+  for (const cmd of commands) {
+    // Create both .ps1 and .cmd wrappers
+    const ps1Script = createPowerShellShim(cmd, shimHelperPath);
+    writeFileSync(join(dir, `${cmd}.ps1`), ps1Script);
+    
+    // CMD wrapper that invokes PowerShell
+    const cmdScript = createCmdWrapper(cmd);
+    writeFileSync(join(dir, `${cmd}.cmd`), cmdScript);
+  }
+
+  // Wrap git on Windows
+  if (policy.action === 'delete' || policy.action === 'modify') {
+    const gitPs1 = createPowerShellGitShim(shimHelperPath);
+    writeFileSync(join(dir, 'git.ps1'), gitPs1);
+    writeFileSync(join(dir, 'git.cmd'), createCmdWrapper('git'));
+  }
 }
 
 /**
@@ -156,10 +185,109 @@ main().catch(() => process.exit(1));
 }
 
 /**
+ * PowerShell shim for Windows
+ */
+function createPowerShellShim(cmd: string, helperPath: string): string {
+  return `# veto-leash PowerShell shim for ${cmd}
+$ErrorActionPreference = "Stop"
+
+# Find real command
+$realCmd = Get-Command ${cmd} -CommandType Application -ErrorAction SilentlyContinue | 
+    Where-Object { $_.Source -notlike "*veto*" } | 
+    Select-Object -First 1
+
+if (-not $realCmd) {
+    Write-Error "veto-leash: cannot find real ${cmd}"
+    exit 127
+}
+
+# Collect file arguments
+$files = @()
+foreach ($arg in $args) {
+    if ($arg -notlike "-*" -and (Test-Path $arg -ErrorAction SilentlyContinue)) {
+        $files += $arg
+    }
+}
+
+# Check with Node helper
+if ($files.Count -gt 0) {
+    $result = & node "${helperPath.replace(/\\/g, '\\\\')}" @files
+    if ($LASTEXITCODE -ne 0) {
+        exit 1
+    }
+}
+
+# Run real command
+& $realCmd.Source @args
+exit $LASTEXITCODE
+`;
+}
+
+/**
+ * CMD wrapper that invokes PowerShell script
+ */
+function createCmdWrapper(cmd: string): string {
+  return `@echo off
+powershell -ExecutionPolicy Bypass -File "%~dp0${cmd}.ps1" %*
+exit /b %ERRORLEVEL%
+`;
+}
+
+/**
+ * PowerShell git shim for Windows
+ */
+function createPowerShellGitShim(helperPath: string): string {
+  return `# veto-leash PowerShell git shim
+$ErrorActionPreference = "Stop"
+
+$realGit = Get-Command git -CommandType Application -ErrorAction SilentlyContinue |
+    Where-Object { $_.Source -notlike "*veto*" } |
+    Select-Object -First 1
+
+if (-not $realGit) {
+    Write-Error "veto-leash: cannot find real git"
+    exit 127
+}
+
+$subcommand = $args[0]
+
+switch ($subcommand) {
+    "rm" {
+        $files = @()
+        foreach ($arg in $args[1..$args.Length]) {
+            if ($arg -notlike "-*" -and (Test-Path $arg -ErrorAction SilentlyContinue)) {
+                $files += $arg
+            }
+        }
+        if ($files.Count -gt 0) {
+            & node "${helperPath.replace(/\\/g, '\\\\')}" @files
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+        }
+    }
+    "checkout" {
+        if ($args[1] -eq "." -or ($args[1] -eq "--" -and $args[2] -eq ".")) {
+            Write-Error "veto-leash: 'git checkout .' blocked - would modify protected files"
+            exit 1
+        }
+    }
+    "reset" {
+        if ($args -contains "--hard") {
+            Write-Error "veto-leash: 'git reset --hard' blocked - would modify protected files"
+            exit 1
+        }
+    }
+}
+
+& $realGit.Source @args
+exit $LASTEXITCODE
+`;
+}
+
+/**
  * Bash shim that calls the Node helper for checking,
  * then executes the real command if allowed.
  */
-function createShim(cmd: string, helperPath: string): string {
+function createUnixShim(cmd: string, helperPath: string): string {
   return `#!/bin/bash
 set -e
 
@@ -196,7 +324,7 @@ exec "$REAL_CMD" "$@"
  * - git checkout .: block by default (restores files)
  * - git reset --hard: block by default
  */
-function createGitShim(helperPath: string, action: string): string {
+function createGitShim(helperPath: string): string {
   return `#!/bin/bash
 set -e
 

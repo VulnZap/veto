@@ -8,16 +8,21 @@ import { spawnAgent } from './wrapper/spawn.js';
 import { COLORS, SYMBOLS, createSpinner } from './ui/colors.js';
 import { clearCache } from './compiler/cache.js';
 import {
-  installClaudeCodeHook,
-  addClaudeCodePolicy,
-  uninstallClaudeCodeHook,
-} from './native/claude-code.js';
-import {
-  installOpenCodePermissions,
-  savePolicy,
+  installAgent,
+  uninstallAgent,
+  addPolicyToAgents,
   listPolicies,
-  uninstallOpenCodePermissions,
-} from './native/opencode.js';
+  AGENTS,
+} from './native/index.js';
+import { startWatchdog, stopWatchdog } from './watchdog/index.js';
+import {
+  findLeashConfig,
+  loadLeashConfig,
+  compileLeashConfig,
+  createLeashConfig,
+} from './config/loader.js';
+import { printAuditLog, clearAuditLog } from './audit/index.js';
+import { login as cloudLogin, printCloudStatus } from './cloud/index.js';
 import type { Policy } from './types.js';
 
 const VERSION = '0.1.0';
@@ -60,6 +65,21 @@ async function main() {
       break;
     case 'uninstall':
       await runUninstall(args[1]);
+      break;
+    case 'init':
+      runInit();
+      break;
+    case 'sync':
+      await runSync(args[1]);
+      break;
+    case 'audit':
+      await runAudit(args.includes('--clear'), args.includes('--tail'));
+      break;
+    case 'login':
+      await cloudLogin();
+      break;
+    case 'cloud':
+      printCloudStatus();
       break;
     case 'clear':
       runClear();
@@ -200,10 +220,67 @@ async function runExplain(restriction: string) {
 }
 
 async function runWatchdog(restriction: string) {
+  if (!restriction) {
+    console.error(
+      `${COLORS.error}${SYMBOLS.error} Error: No restriction provided${COLORS.reset}`
+    );
+    process.exit(1);
+  }
+
+  // Compile restriction
+  const spinner = createSpinner('Compiling restriction...');
+  let policy: Policy;
+
+  try {
+    policy = await compile(restriction);
+    spinner.stop();
+  } catch (err) {
+    spinner.stop();
+    if ((err as Error).message === 'GEMINI_API_KEY not set') {
+      console.error(
+        `${COLORS.error}${SYMBOLS.error} Error: GEMINI_API_KEY not set${COLORS.reset}\n`
+      );
+      console.log('  Get a free API key: https://aistudio.google.com/apikey\n');
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  // Start watchdog
+  const snapshotSpinner = createSpinner('Creating file snapshots...');
+  const session = await startWatchdog(process.cwd(), policy);
+  snapshotSpinner.stop();
+
+  // Print startup message
   console.log(
-    `${COLORS.warning}${SYMBOLS.warning} Watchdog mode not yet implemented${COLORS.reset}`
+    `\n${COLORS.success}${SYMBOLS.success} veto-leash watchdog active${COLORS.reset}\n`
   );
-  console.log('Use wrapper mode: leash cc "' + restriction + '"');
+  console.log(`  ${COLORS.dim}Policy:${COLORS.reset} ${policy.description}`);
+  console.log(`  ${COLORS.dim}Action:${COLORS.reset} ${policy.action}`);
+  console.log(`  ${COLORS.dim}Files protected:${COLORS.reset} ${session.snapshot.files.size}\n`);
+  console.log(`  ${COLORS.dim}Protecting:${COLORS.reset}`);
+  console.log(`    ${policy.include.slice(0, 5).join('  ')}`);
+  if (policy.include.length > 5) {
+    console.log(
+      `    ${COLORS.dim}...and ${policy.include.length - 5} more patterns${COLORS.reset}`
+    );
+  }
+  console.log(`\n  ${COLORS.info}Watching for changes. Auto-restore on violation.${COLORS.reset}`);
+  console.log(`  Press Ctrl+C to exit\n`);
+
+  // Handle cleanup
+  process.on('SIGINT', async () => {
+    await stopWatchdog(session);
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', async () => {
+    await stopWatchdog(session);
+    process.exit(0);
+  });
+
+  // Keep process alive
+  await new Promise(() => {});
 }
 
 function runStatus() {
@@ -213,27 +290,23 @@ function runStatus() {
 }
 
 async function runInstall(agent: string) {
-  const normalized = normalizeAgent(agent);
+  if (!agent) {
+    console.error(`${COLORS.error}${SYMBOLS.error} No agent specified${COLORS.reset}`);
+    console.log(`\nSupported agents:`);
+    for (const a of AGENTS) {
+      const status = a.hasNativeHooks ? `${COLORS.success}native${COLORS.reset}` : `${COLORS.dim}guidance${COLORS.reset}`;
+      console.log(`  ${COLORS.dim}${a.aliases[0].padEnd(12)}${COLORS.reset} ${a.name} (${status})`);
+    }
+    console.log('');
+    process.exit(1);
+  }
 
-  switch (normalized) {
-    case 'claude-code':
-      await installClaudeCodeHook();
-      break;
-    case 'opencode':
-      await installOpenCodePermissions('project');
-      break;
-    case 'opencode-global':
-      await installOpenCodePermissions('global');
-      break;
-    default:
-      console.error(
-        `${COLORS.error}${SYMBOLS.error} Unknown agent: ${agent}${COLORS.reset}`
-      );
-      console.log(`\nSupported agents for native install:`);
-      console.log(`  ${COLORS.dim}cc, claude-code${COLORS.reset}    Claude Code`);
-      console.log(`  ${COLORS.dim}oc, opencode${COLORS.reset}       OpenCode (project config)`);
-      console.log(`  ${COLORS.dim}oc-global${COLORS.reset}          OpenCode (global config)\n`);
-      process.exit(1);
+  const isGlobal = agent.endsWith('-global');
+  const agentId = isGlobal ? agent.replace('-global', '') : agent;
+  
+  const success = await installAgent(agentId, { global: isGlobal });
+  if (!success) {
+    process.exit(1);
   }
 }
 
@@ -263,24 +336,24 @@ async function runAdd(restriction: string) {
     throw err;
   }
 
-  // Save to veto-leash config (used by OpenCode install)
-  savePolicy(restriction, policy);
-
-  // Also save to Claude Code policies dir if it exists
+  // Generate policy name from restriction
   const policyName = restriction
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 50);
-  await addClaudeCodePolicy(policy, policyName);
+
+  // Save to all agent policy stores
+  await addPolicyToAgents(policy, policyName);
 
   console.log(`\n${COLORS.success}${SYMBOLS.success} Policy added${COLORS.reset}\n`);
   console.log(`  ${COLORS.dim}Restriction:${COLORS.reset} "${restriction}"`);
   console.log(`  ${COLORS.dim}Action:${COLORS.reset} ${policy.action}`);
   console.log(`  ${COLORS.dim}Patterns:${COLORS.reset} ${policy.include.join(', ')}`);
-  console.log(`\nTo enforce:`);
-  console.log(`  ${COLORS.dim}leash install cc${COLORS.reset}   (Claude Code - ready immediately)`);
-  console.log(`  ${COLORS.dim}leash install oc${COLORS.reset}   (OpenCode - regenerate config)\n`);
+  console.log(`\nTo enforce, install for your agent:`);
+  console.log(`  ${COLORS.dim}leash install cc${COLORS.reset}        Claude Code`);
+  console.log(`  ${COLORS.dim}leash install windsurf${COLORS.reset}  Windsurf`);
+  console.log(`  ${COLORS.dim}leash install oc${COLORS.reset}        OpenCode\n`);
 }
 
 function runList() {
@@ -288,41 +361,77 @@ function runList() {
 }
 
 async function runUninstall(agent: string) {
-  const normalized = normalizeAgent(agent);
+  if (!agent) {
+    console.error(`${COLORS.error}${SYMBOLS.error} No agent specified${COLORS.reset}`);
+    process.exit(1);
+  }
 
-  switch (normalized) {
-    case 'claude-code':
-      await uninstallClaudeCodeHook();
-      break;
-    case 'opencode':
-      await uninstallOpenCodePermissions('project');
-      break;
-    case 'opencode-global':
-      await uninstallOpenCodePermissions('global');
-      break;
-    default:
-      console.error(
-        `${COLORS.error}${SYMBOLS.error} Unknown agent: ${agent}${COLORS.reset}`
-      );
-      process.exit(1);
+  const isGlobal = agent.endsWith('-global');
+  const agentId = isGlobal ? agent.replace('-global', '') : agent;
+  
+  const success = await uninstallAgent(agentId, { global: isGlobal });
+  if (!success) {
+    process.exit(1);
   }
 }
 
-function normalizeAgent(agent: string): string {
-  switch (agent?.toLowerCase()) {
-    case 'cc':
-    case 'claude':
-    case 'claude-code':
-      return 'claude-code';
-    case 'oc':
-    case 'opencode':
-      return 'opencode';
-    case 'oc-global':
-    case 'opencode-global':
-      return 'opencode-global';
-    default:
-      return agent || '';
+function runInit() {
+  createLeashConfig();
+  console.log(`\nEdit .leash to customize your policies.`);
+  console.log(`Then run: ${COLORS.dim}leash sync${COLORS.reset}\n`);
+}
+
+async function runSync(agent?: string) {
+  const configPath = findLeashConfig();
+  
+  if (!configPath) {
+    console.error(`${COLORS.error}${SYMBOLS.error} No .leash config found${COLORS.reset}`);
+    console.log(`Run: ${COLORS.dim}leash init${COLORS.reset}`);
+    process.exit(1);
   }
+
+  const config = loadLeashConfig(configPath);
+  if (!config) {
+    process.exit(1);
+  }
+
+  console.log(`\n${COLORS.info}Loading ${configPath}...${COLORS.reset}`);
+
+  // Compile all policies
+  const compiled = await compileLeashConfig(config);
+
+  console.log(`${COLORS.success}${SYMBOLS.success} Compiled ${compiled.policies.length} policies${COLORS.reset}\n`);
+
+  // Save each policy
+  for (const { restriction, policy } of compiled.policies) {
+    const policyName = restriction
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50);
+    
+    await addPolicyToAgents(policy, policyName);
+  }
+
+  // If agent specified, install for that agent
+  if (agent) {
+    console.log('');
+    await installAgent(agent);
+  } else {
+    console.log(`To install for an agent:`);
+    console.log(`  ${COLORS.dim}leash install cc${COLORS.reset}        Claude Code`);
+    console.log(`  ${COLORS.dim}leash install windsurf${COLORS.reset}  Windsurf`);
+    console.log(`  ${COLORS.dim}leash install oc${COLORS.reset}        OpenCode\n`);
+  }
+}
+
+async function runAudit(clear: boolean, tail: boolean) {
+  if (clear) {
+    clearAuditLog();
+    return;
+  }
+  
+  await printAuditLog(50, tail);
 }
 
 function runClear() {
@@ -332,43 +441,54 @@ function runClear() {
 
 function printHelp() {
   console.log(`
-${COLORS.bold}veto-leash${COLORS.reset} \u2014 Semantic permissions for AI coding agents
+${COLORS.bold}veto-leash${COLORS.reset} \u2014 sudo for AI agents
 
 ${COLORS.bold}USAGE${COLORS.reset}
   leash <agent> "<restriction>"     Wrap agent with policy enforcement
-  leash explain "<restriction>"     Preview what a restriction protects
-  leash add "<restriction>"         Save a policy for native install
+  leash watch "<restriction>"       Background file protection (any agent)
+  leash explain "<restriction>"     Preview policy without installing
+  leash add "<restriction>"         Save policy for native install
+  leash init                        Create .leash config file
+  leash sync [agent]                Apply .leash policies to agents
   leash install <agent>             Install native hooks/config
   leash uninstall <agent>           Remove native hooks/config
   leash list                        Show saved policies
-  leash watch "<restriction>"       Background filesystem protection
+  leash audit [--tail] [--clear]    View or clear audit log
   leash status                      Show active sessions
   leash clear                       Clear compilation cache
 
-${COLORS.bold}AGENTS${COLORS.reset}
-  cc, claude-code    Claude Code (native hooks)
-  oc, opencode       OpenCode (project config)
-  oc-global          OpenCode (global config)
-  cursor             Cursor (wrapper mode)
-  aider              Aider (wrapper mode)
-  <any>              Any CLI command (wrapper mode)
+${COLORS.bold}AGENTS (native integration)${COLORS.reset}
+  cc, claude-code    Claude Code     PreToolUse hooks
+  ws, windsurf       Windsurf        Cascade hooks
+  oc, opencode       OpenCode        permission.bash rules
+  cursor             Cursor          .cursorrules (guidance only)
+  aider              Aider           .aider.conf.yml read-only
+
+${COLORS.bold}AGENTS (wrapper/watchdog)${COLORS.reset}
+  codex              Codex CLI       Use 'leash watch' (OS sandbox)
+  copilot            GitHub Copilot  Use wrapper mode
+  <any>              Any CLI tool    PATH-based interception
 
 ${COLORS.bold}EXAMPLES${COLORS.reset}
-  ${COLORS.dim}# Wrapper mode (intercepts commands)${COLORS.reset}
+  ${COLORS.dim}# Quick start - wrapper mode${COLORS.reset}
   leash cc "don't delete test files"
-  leash opencode "protect .env"
-
-  ${COLORS.dim}# Native mode (integrates with agent's permission system)${COLORS.reset}
+  
+  ${COLORS.dim}# Native mode - persistent policies${COLORS.reset}
   leash add "don't delete test files"
   leash add "protect .env"
   leash install cc
-
-  ${COLORS.dim}# Preview policy without installing${COLORS.reset}
-  leash explain "no database migrations"
+  leash install windsurf
+  
+  ${COLORS.dim}# Watchdog mode - catches everything${COLORS.reset}
+  leash watch "protect test files"
+  
+  ${COLORS.dim}# Project config - team-wide policies${COLORS.reset}
+  leash init              # Creates .leash file
+  leash sync cc           # Compiles and installs
 
 ${COLORS.bold}ENVIRONMENT${COLORS.reset}
-  GEMINI_API_KEY     Required for custom restrictions.
-                     Get free at https://aistudio.google.com/apikey
+  GEMINI_API_KEY     Required for custom restrictions (not builtins).
+                     Free: https://aistudio.google.com/apikey
 
 ${COLORS.bold}MORE INFO${COLORS.reset}
   https://github.com/plaw-inc/veto-leash

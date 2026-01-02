@@ -9,6 +9,7 @@ import type {
 } from '../types.js';
 import { isProtected } from '../matcher.js';
 import { COLORS, SYMBOLS } from '../ui/colors.js';
+import { logBlocked } from '../audit/index.js';
 
 export class VetoDaemon {
   private server: net.Server | null = null;
@@ -80,6 +81,9 @@ export class VetoDaemon {
         action: req.action,
         target: req.target,
       });
+
+      // Log to audit
+      logBlocked(req.target, req.action, this.policy.description, this.state.agent);
 
       // Print block notification
       console.log(

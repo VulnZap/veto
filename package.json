@@ -13,15 +13,16 @@
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
-    "micromatch": "^4.0.8",
+    "chokidar": "^4.0.3",
     "glob": "^11.0.0",
-    "chokidar": "^4.0.3"
+    "micromatch": "^4.0.8",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "tsx": "^4.19.0",
+    "@types/micromatch": "^4.0.9",
     "@types/node": "^22.0.0",
-    "@types/micromatch": "^4.0.9"
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
   },
   "engines": {
     "node": ">=20"

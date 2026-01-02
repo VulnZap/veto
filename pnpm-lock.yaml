@@ -20,6 +20,9 @@ importers:
       micromatch:
         specifier: ^4.0.8
         version: 4.0.8
+      yaml:
+        specifier: ^2.8.2
+        version: 2.8.2
     devDependencies:
       '@types/micromatch':
         specifier: ^4.0.9
@@ -539,6 +542,11 @@ packages:
       utf-8-validate:
         optional: true
 
+  yaml@2.8.2:
+    resolution: {integrity: sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
 snapshots:
 
   '@esbuild/aix-ppc64@0.27.2':
@@ -983,3 +991,5 @@ snapshots:
       strip-ansi: 7.1.2
 
   ws@8.18.3: {}
+
+  yaml@2.8.2: {}
