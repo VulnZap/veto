@@ -38,9 +38,9 @@
     "leash"
   ],
   "author": "Plaw, Inc.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/plaw-inc/veto-leash"
+    "url": "https://github.com/VulnZap/veto-leash"
   }
 }
