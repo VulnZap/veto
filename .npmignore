@@ -1,0 +1,31 @@
+# Source files (TypeScript)
+src/
+tsconfig.json
+
+# Development files
+*.log
+.env
+.DS_Store
+.git/
+.github/
+
+# Documentation (not needed in package)
+AGENTS.md
+IMPLEMENTATION_PLAN.md
+
+# Tests
+test/
+tests/
+__tests__/
+*.test.ts
+*.spec.ts
+coverage/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
