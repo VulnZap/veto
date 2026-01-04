@@ -2,7 +2,7 @@
 // OpenCode native permission integration
 // Generates permission rules for OpenCode's opencode.json config
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { Policy } from '../types.js';
@@ -320,4 +320,60 @@ export function listPolicies(): void {
     console.log(`   ${COLORS.dim}Action:${COLORS.reset} ${policy.action}`);
     console.log(`   ${COLORS.dim}Description:${COLORS.reset} ${policy.description}\n`);
   }
+  
+  console.log(`${COLORS.dim}To remove: leash remove <number> or leash remove "<name>"${COLORS.reset}\n`);
+}
+
+/**
+ * Remove a policy by index (1-based) or name
+ */
+export function removePolicy(target: string): boolean {
+  const stored = loadStoredPolicies();
+  
+  if (stored.policies.length === 0) {
+    console.log(`${COLORS.error}${SYMBOLS.error} No policies to remove${COLORS.reset}`);
+    return false;
+  }
+  
+  let indexToRemove = -1;
+  
+  // Try as number first (1-based index)
+  const num = parseInt(target, 10);
+  if (!isNaN(num) && num >= 1 && num <= stored.policies.length) {
+    indexToRemove = num - 1;
+  } else {
+    // Try as name
+    indexToRemove = stored.policies.findIndex(
+      (p) => p.restriction.toLowerCase() === target.toLowerCase() ||
+             slugify(p.restriction) === target.toLowerCase()
+    );
+  }
+  
+  if (indexToRemove < 0) {
+    console.log(`${COLORS.error}${SYMBOLS.error} Policy not found: ${target}${COLORS.reset}`);
+    console.log(`${COLORS.dim}Use 'leash list' to see available policies${COLORS.reset}`);
+    return false;
+  }
+  
+  const removed = stored.policies[indexToRemove];
+  stored.policies.splice(indexToRemove, 1);
+  
+  // Save updated list
+  writeFileSync(POLICIES_FILE, JSON.stringify(stored, null, 2));
+  
+  // Also remove from Claude Code hooks if installed
+  const policySlug = slugify(removed.restriction);
+  const claudePolicyPath = join(homedir(), '.claude', 'hooks', 'veto-leash', 'policies', `${policySlug}.json`);
+  if (existsSync(claudePolicyPath)) {
+    unlinkSync(claudePolicyPath);
+  }
+  
+  console.log(`${COLORS.success}${SYMBOLS.success} Removed: "${removed.restriction}"${COLORS.reset}`);
+  return true;
+}
+
+function slugify(text: string): string {
+  return text.toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }

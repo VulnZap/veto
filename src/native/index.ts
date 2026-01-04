@@ -17,6 +17,8 @@ import {
   installOpenCodePermissions,
   uninstallOpenCodePermissions,
   savePolicy as saveOpenCodePolicy,
+  removePolicy,
+  listPolicies,
 } from './opencode.js';
 import {
   installWindsurfHooks,
@@ -279,7 +281,9 @@ function printSupportedAgents(): void {
 
 // Re-export individual modules
 export * from './claude-code.js';
-export * from './opencode.js';
 export * from './windsurf.js';
 export * from './cursor.js';
 export * from './aider.js';
+
+// Explicitly export policy management functions
+export { listPolicies, removePolicy } from './opencode.js';

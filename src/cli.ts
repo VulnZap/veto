@@ -12,6 +12,7 @@ import {
   uninstallAgent,
   addPolicyToAgents,
   listPolicies,
+  removePolicy,
   AGENTS,
   detectInstalledAgents,
 } from './native/index.js';
@@ -71,6 +72,10 @@ async function main() {
       break;
     case 'list':
       runList();
+      break;
+    case 'remove':
+    case 'rm':
+      runRemove(args.slice(1).join(' '));
       break;
     case 'uninstall':
       await runUninstall(args[1]);
@@ -453,6 +458,20 @@ function runList() {
   listPolicies();
 }
 
+function runRemove(target: string) {
+  if (!target.trim()) {
+    console.error(`${COLORS.error}${SYMBOLS.error} Specify policy to remove${COLORS.reset}`);
+    console.log(`${COLORS.dim}Usage: leash remove <number> or leash remove "<name>"${COLORS.reset}`);
+    console.log(`${COLORS.dim}Run 'leash list' to see policies${COLORS.reset}`);
+    process.exit(1);
+  }
+  
+  const success = removePolicy(target.trim());
+  if (!success) {
+    process.exit(1);
+  }
+}
+
 async function runUninstall(agent: string) {
   if (!agent) {
     console.error(`${COLORS.error}${SYMBOLS.error} No agent specified${COLORS.reset}`);
@@ -500,6 +519,7 @@ ${COLORS.bold}USAGE${COLORS.reset}
   leash install <agent>             Install native hooks/config
   leash uninstall <agent>           Remove native hooks/config
   leash list                        Show saved policies
+  leash remove <n|name>             Remove a policy by number or name
   leash audit [--tail] [--clear]    View or clear audit log
   leash status                      Show active sessions
   leash clear                       Clear compilation cache
