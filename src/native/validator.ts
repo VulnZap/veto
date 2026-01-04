@@ -41,7 +41,7 @@ interface Policy {
 
 // AST modules - loaded dynamically to avoid crashes if not available
 let astAvailable = false;
-let checkContentAST: ((content: string, filePath: string, policy: Policy) => Promise<{ allowed: boolean; match?: { reason: string; suggest?: string; line?: number; text: string } }>) | null = null;
+let checkContentAST: ((content: string, filePath: string, policy: Policy) => Promise<{ allowed: boolean; method?: string; match?: { reason: string; suggest?: string; line?: number; text: string } }>) | null = null;
 let initParser: (() => Promise<void>) | null = null;
 let loadLanguage: ((lang: string) => Promise<unknown>) | null = null;
 let detectLanguage: ((filePath: string) => string | null) | null = null;
@@ -347,6 +347,8 @@ async function main(): Promise<void> {
       }
 
       if (filePath && content) {
+        let astRanSuccessfully = false;
+        
         // Check if AST modules loaded and file is a supported language
         if (astAvailable && detectLanguage) {
           const language = detectLanguage(filePath);
@@ -367,32 +369,39 @@ async function main(): Promise<void> {
                 });
                 return;
               }
+              // If AST actually ran (not skipped), mark it
+              if (result.method === 'ast') {
+                astRanSuccessfully = true;
+              }
             }
           }
         }
 
-        // Fallback: check regex contentRules for non-AST files or as backup
-        for (const policy of policies) {
-          if (!policy.contentRules?.length) continue;
+        // Fallback: check regex contentRules ONLY for non-AST files
+        // Skip regex if AST ran successfully (AST is more accurate)
+        if (!astRanSuccessfully) {
+          for (const policy of policies) {
+            if (!policy.contentRules?.length) continue;
 
-          for (const rule of policy.contentRules) {
-            if (!fileMatchesPatterns(filePath, rule.fileTypes)) continue;
+            for (const rule of policy.contentRules) {
+              if (!fileMatchesPatterns(filePath, rule.fileTypes)) continue;
 
-            try {
-              const regex = new RegExp(rule.pattern, 'm');
-              const match = regex.exec(content);
-              if (match) {
-                const beforeMatch = content.slice(0, match.index);
-                const lineNum = (beforeMatch.match(/\n/g) || []).length + 1;
-                outputDeny(rule.reason, {
-                  suggest: rule.suggest,
-                  line: lineNum,
-                  match: match[0].slice(0, 50),
-                });
-                return;
+              try {
+                const regex = new RegExp(rule.pattern, 'm');
+                const match = regex.exec(content);
+                if (match) {
+                  const beforeMatch = content.slice(0, match.index);
+                  const lineNum = (beforeMatch.match(/\n/g) || []).length + 1;
+                  outputDeny(rule.reason, {
+                    suggest: rule.suggest,
+                    line: lineNum,
+                    match: match[0].slice(0, 50),
+                  });
+                  return;
+                }
+              } catch {
+                // Invalid regex, skip
               }
-            } catch {
-              // Invalid regex, skip
             }
           }
         }

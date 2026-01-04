@@ -1,8 +1,39 @@
 // src/ast/parser.ts
-import { Parser, Language, Tree, Query } from 'web-tree-sitter';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+
+// Type definitions for tree-sitter (defined locally to avoid import issues)
+export interface Language {
+  query(source: string): Query;
+}
+
+export interface Tree {
+  rootNode: SyntaxNode;
+}
+
+export interface Query {
+  matches(node: SyntaxNode): QueryMatch[];
+  captures(node: SyntaxNode): QueryCapture[];
+}
+
+export interface SyntaxNode {
+  type: string;
+  text: string;
+  startPosition: { row: number; column: number };
+  endPosition: { row: number; column: number };
+  children: SyntaxNode[];
+}
+
+export interface QueryMatch {
+  pattern: number;
+  captures: QueryCapture[];
+}
+
+export interface QueryCapture {
+  name: string;
+  node: SyntaxNode;
+}
 
 export type LanguageType = 'typescript' | 'javascript' | 'tsx' | 'jsx';
 
@@ -12,23 +43,69 @@ export interface ParseResult {
   parseTimeMs: number;
 }
 
-// Re-export types from web-tree-sitter
-export type { Language, Tree, Query };
+// Dynamic tree-sitter module reference
+let TreeSitter: any = null;
 
 // Module state
 let initialized = false;
 let initPromise: Promise<void> | null = null;
 const languages = new Map<LanguageType, Language>();
-const parsers = new Map<LanguageType, Parser>();
+const parsers = new Map<LanguageType, any>();
 const treeCache = new Map<string, { tree: Tree; hash: string }>();
 
-// Language WASM file URLs - these need to be downloaded/bundled
+// Language WASM file URLs
 const LANGUAGE_WASM_URLS: Record<LanguageType, string> = {
   typescript: 'https://github.com/AdeAttwood/tree-sitter-typescript-wasm/releases/download/0.23.0/tree-sitter-typescript.wasm',
   tsx: 'https://github.com/AdeAttwood/tree-sitter-typescript-wasm/releases/download/0.23.0/tree-sitter-tsx.wasm',
   javascript: 'https://github.com/AdeAttwood/tree-sitter-javascript-wasm/releases/download/0.21.0/tree-sitter-javascript.wasm',
   jsx: 'https://github.com/AdeAttwood/tree-sitter-javascript-wasm/releases/download/0.21.0/tree-sitter-javascript.wasm',
 };
+
+/**
+ * Load web-tree-sitter module dynamically to handle different versions.
+ * Supports both named exports (modern) and default export (older).
+ * Note: Language class may not be available until after Parser.init()
+ */
+async function loadTreeSitter(): Promise<any> {
+  if (TreeSitter) return TreeSitter;
+  
+  const mod: any = await import('web-tree-sitter');
+  
+  // Modern versions use named exports
+  if (mod.Parser && typeof mod.Parser.init === 'function') {
+    TreeSitter = { Parser: mod.Parser, _mod: mod };
+    return TreeSitter;
+  }
+  
+  // Older versions use default export (Parser class directly)
+  if (mod.default && typeof mod.default.init === 'function') {
+    TreeSitter = { Parser: mod.default, _mod: mod };
+    return TreeSitter;
+  }
+  
+  // Fallback: module itself is Parser class
+  if (typeof mod.init === 'function') {
+    TreeSitter = { Parser: mod, _mod: mod };
+    return TreeSitter;
+  }
+  
+  throw new Error('Failed to load web-tree-sitter: unknown export format');
+}
+
+/**
+ * Get Language class after initialization
+ * In older versions, Language is available as Parser.Language after init
+ */
+function getLanguageClass(): any {
+  if (!TreeSitter) throw new Error('TreeSitter not loaded');
+  
+  // Check various locations for Language class
+  if (TreeSitter._mod?.Language) return TreeSitter._mod.Language;
+  if (TreeSitter.Parser?.Language) return TreeSitter.Parser.Language;
+  if (TreeSitter.Language) return TreeSitter.Language;
+  
+  throw new Error('Cannot find Language class in web-tree-sitter');
+}
 
 /**
  * Initialize the tree-sitter WASM runtime.
@@ -40,7 +117,8 @@ export async function initParser(): Promise<void> {
 
   initPromise = (async () => {
     try {
-      await Parser.init();
+      const ts = await loadTreeSitter();
+      await ts.Parser.init();
       initialized = true;
     } catch (error) {
       console.warn('Failed to initialize tree-sitter:', error);
@@ -67,18 +145,19 @@ export async function loadLanguage(languageType: LanguageType): Promise<Language
   }
 
   await initParser();
+  const LanguageClass = getLanguageClass();
 
   // Check for local WASM file first
   const localWasmPath = getLocalWasmPath(languageType);
   let language: Language;
 
   if (localWasmPath && fs.existsSync(localWasmPath)) {
-    language = await Language.load(localWasmPath);
+    language = await LanguageClass.load(localWasmPath);
   } else {
     // Try to fetch from URL (requires network access)
     const url = LANGUAGE_WASM_URLS[languageType];
     try {
-      language = await Language.load(url);
+      language = await LanguageClass.load(url);
     } catch (error) {
       throw new Error(
         `Failed to load language ${languageType}. ` +
@@ -110,6 +189,15 @@ function getLocalWasmPath(languageType: LanguageType): string | null {
         return null;
       }
     })(),
+    // From hooks directory
+    (() => {
+      try {
+        const __dirname = path.dirname(fileURLToPath(import.meta.url));
+        return path.resolve(__dirname, '..', 'languages', wasmFile);
+      } catch {
+        return null;
+      }
+    })(),
   ].filter((p): p is string => p !== null);
   
   for (const candidate of candidates) {
@@ -124,13 +212,14 @@ function getLocalWasmPath(languageType: LanguageType): string | null {
 /**
  * Get or create a parser for the given language
  */
-export async function getParser(languageType: LanguageType): Promise<Parser> {
+export async function getParser(languageType: LanguageType): Promise<any> {
   if (parsers.has(languageType)) {
     return parsers.get(languageType)!;
   }
 
+  const ts = await loadTreeSitter();
   const language = await loadLanguage(languageType);
-  const parser = new Parser();
+  const parser = new ts.Parser();
   parser.setLanguage(language);
   parsers.set(languageType, parser);
   return parser;
@@ -163,8 +252,7 @@ export async function parseFile(
   if (cached && cached.hash === hash) {
     tree = cached.tree;
   } else {
-    // Don't use incremental parsing when content changed - web-tree-sitter
-    // has issues with incremental updates from different source text
+    // Don't use incremental parsing when content changed
     const result = parser.parse(content);
     if (!result) {
       throw new Error(`Failed to parse ${filePath}`);
@@ -239,7 +327,7 @@ function hashContent(content: string): string {
   let hash = 0;
   for (let i = 0; i < content.length; i++) {
     hash = ((hash << 5) - hash) + content.charCodeAt(i);
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = hash & hash;
   }
   return hash.toString(36);
 }

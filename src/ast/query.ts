@@ -1,7 +1,6 @@
 // src/ast/query.ts
-import { Query } from 'web-tree-sitter';
 import type { ASTRule } from '../types.js';
-import { getLanguageObject, type LanguageType, type Tree, type Language } from './parser.js';
+import { getLanguageObject, type LanguageType, type Tree, type Query } from './parser.js';
 
 export interface ASTMatch {
   /** Named captures from the query */
@@ -28,12 +27,29 @@ function getQueryCacheKey(queryString: string, languageType: LanguageType): stri
 
 /**
  * Get or create a compiled query
+ * Handles both old (new Query(lang, source)) and new (lang.query(source)) API
  */
 export async function getQuery(queryString: string, languageType: LanguageType): Promise<Query> {
   const cacheKey = getQueryCacheKey(queryString, languageType);
   if (!queryCache.has(cacheKey)) {
     const language = await getLanguageObject(languageType);
-    const query = new Query(language, queryString);
+    let query: Query;
+    
+    // Try new API first (language.query())
+    if (typeof (language as any).query === 'function') {
+      query = (language as any).query(queryString);
+    } else {
+      // Fall back to old API (new Query(language, source))
+      // Need to dynamically import Query constructor
+      const TreeSitter: any = await import('web-tree-sitter');
+      const QueryClass = TreeSitter.Query || TreeSitter.default?.Query;
+      if (QueryClass) {
+        query = new QueryClass(language, queryString);
+      } else {
+        throw new Error('Cannot find Query constructor in web-tree-sitter');
+      }
+    }
+    
     queryCache.set(cacheKey, query);
   }
   return queryCache.get(cacheKey)!;
@@ -51,7 +67,7 @@ export async function runQuery(
   const query = await getQuery(queryString, languageType);
   const matches: ASTMatch[] = [];
 
-  for (const match of query.matches(tree.rootNode)) {
+  for (const match of query.matches(tree.rootNode as any)) {
     const captures = new Map<string, { text: string; line: number; column: number }>();
     for (const capture of match.captures) {
       captures.set(capture.name, {

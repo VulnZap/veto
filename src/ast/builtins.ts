@@ -226,6 +226,89 @@ export const AST_BUILTINS: Record<string, ASTRule[]> = {
   // REACT PATTERNS
   // ═══════════════════════════════════════════════════════════════════════════
 
+  'no react': [
+    {
+      id: 'no-react-import',
+      // Matches: import React from 'react', import { useState } from 'react'
+      query: `(import_statement source: (string) @source (#match? @source "^['\"]react['\"]$"))`,
+      languages: ['typescript', 'javascript'],
+      reason: 'React is not allowed in this project',
+      suggest: 'Use vanilla JS, Vue, Svelte, or another framework',
+      regexPreFilter: 'react',
+    },
+    {
+      id: 'no-react-dom-import',
+      // Matches: import ReactDOM from 'react-dom'
+      query: `(import_statement source: (string) @source (#match? @source "react-dom"))`,
+      languages: ['typescript', 'javascript'],
+      reason: 'React DOM is not allowed',
+      regexPreFilter: 'react-dom',
+    },
+    {
+      id: 'no-react-require',
+      // Matches: require('react')
+      query: `
+        (call_expression
+          function: (identifier) @fn (#eq? @fn "require")
+          arguments: (arguments (string) @source (#match? @source "^['\"]react")))
+      `,
+      languages: ['typescript', 'javascript'],
+      reason: 'React require() is not allowed',
+      regexPreFilter: 'require',
+    },
+    {
+      id: 'no-jsx-element',
+      // Matches: <Component>, <div>, etc. (opening tags)
+      query: `(jsx_element) @jsx`,
+      languages: ['typescript', 'javascript'],
+      reason: 'JSX syntax is not allowed (React is banned)',
+      suggest: 'Use vanilla DOM APIs or another framework',
+      regexPreFilter: '<',
+    },
+    {
+      id: 'no-jsx-self-closing',
+      // Matches: <Component />, <input />, etc.
+      query: `(jsx_self_closing_element) @jsx`,
+      languages: ['typescript', 'javascript'],
+      reason: 'JSX syntax is not allowed (React is banned)',
+      regexPreFilter: '/>',
+    },
+    {
+      id: 'no-jsx-fragment',
+      // Matches: <>, </>
+      query: `(jsx_fragment) @jsx`,
+      languages: ['typescript', 'javascript'],
+      reason: 'JSX fragments are not allowed (React is banned)',
+      regexPreFilter: '<>',
+    },
+  ],
+
+  // Aliases for 'no react'
+  'react is not allowed': [
+    {
+      id: 'no-react-import',
+      query: `(import_statement source: (string) @source (#match? @source "^['\"]react['\"]$"))`,
+      languages: ['typescript', 'javascript'],
+      reason: 'React is not allowed in this project',
+      suggest: 'Use vanilla JS, Vue, Svelte, or another framework',
+      regexPreFilter: 'react',
+    },
+    {
+      id: 'no-jsx-element',
+      query: `(jsx_element) @jsx`,
+      languages: ['typescript', 'javascript'],
+      reason: 'JSX syntax is not allowed (React is banned)',
+      regexPreFilter: '<',
+    },
+    {
+      id: 'no-jsx-self-closing',
+      query: `(jsx_self_closing_element) @jsx`,
+      languages: ['typescript', 'javascript'],
+      reason: 'JSX syntax is not allowed (React is banned)',
+      regexPreFilter: '/>',
+    },
+  ],
+
   'no class components': [
     {
       id: 'no-react-class-extends',
@@ -369,11 +452,35 @@ export function getASTRules(restriction: string): ASTRule[] | null {
     normalized.replace(/^ban /, 'no '),
     normalized.replace(/^block /, 'no '),
     normalized.replace(/^disallow /, 'no '),
+    normalized.replace(/^never use /, 'no '),
   ];
 
   for (const variant of variations) {
     if (AST_BUILTINS[variant]) {
       return AST_BUILTINS[variant];
+    }
+  }
+
+  // Special handling for library restrictions
+  // "React is not allowed", "react is banned", "don't use react", etc. → 'no react'
+  const libraryPatterns = [
+    { match: /\breact\b/i, key: 'no react' },
+    { match: /\blodash\b/i, key: 'no lodash' },
+    { match: /\bmoment\b/i, key: 'no moment' },
+    { match: /\bjquery\b/i, key: 'no jquery' },
+    { match: /\baxios\b/i, key: 'no axios' },
+    { match: /\bconsole\.log\b/i, key: 'no console.log' },
+    { match: /\bany\s*type/i, key: 'no any types' },
+  ];
+
+  // Check if this looks like a restriction (contains negative keywords)
+  const isRestriction = /\b(no|don't|do not|avoid|ban|block|disallow|never|not allowed|banned|forbidden|prohibited)\b/i.test(normalized);
+
+  if (isRestriction) {
+    for (const { match, key } of libraryPatterns) {
+      if (match.test(normalized) && AST_BUILTINS[key]) {
+        return AST_BUILTINS[key];
+      }
     }
   }
 
