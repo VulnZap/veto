@@ -154,18 +154,32 @@ Restriction: "${restriction}"`;
         config: {
           temperature: 0,
           maxOutputTokens: 2048,
-          responseMimeType: 'application/json',
-          responseSchema: POLICY_SCHEMA,
+          // Remove native JSON parsing to handle partial/invalid JSON gracefully
         },
       });
       
-      const text = response.text;
+      let text = response.text || '';
+      
+      // Clean up markdown code blocks if the model included them
+      if (text.includes('```json')) {
+        text = text.split('```json')[1].split('```')[0].trim();
+      } else if (text.includes('```')) {
+        text = text.split('```')[1].split('```')[0].trim();
+      }
+      
+      text = text.trim();
+
       if (!text) {
         throw new Error('Empty response from Gemini');
       }
 
       try {
         const parsed = JSON.parse(text) as Policy;
+
+        // Validation: ensure required fields are present
+        if (!parsed.action || !parsed.include || !parsed.description) {
+          throw new Error('Generated policy is missing required fields');
+        }
 
         // Override action with suggested action if not present
         if (!parsed.action) {
@@ -175,7 +189,8 @@ Restriction: "${restriction}"`;
         return parsed;
       } catch (parseError: any) {
         // If parsing fails, it's likely truncated or hallucinated
-        throw new Error(`Failed to parse policy JSON: ${parseError.message}\nRaw response: ${text.slice(0, 100)}...`);
+        const snippet = text.length > 200 ? text.slice(0, 200) + '...' : text;
+        throw new Error(`Failed to parse policy JSON: ${parseError.message}\n\n[RAW OUTPUT snippet]:\n${snippet}\n`);
       }
 
     } catch (error: any) {

@@ -31,7 +31,7 @@ import { login as cloudLogin, printCloudStatus } from './cloud/index.js';
 import { getActiveSessions } from './wrapper/sessions.js';
 import type { Policy } from './types.js';
 
-const VERSION = '0.2.0';
+const VERSION = '1.1.9';
 
 async function main() {
   const args = process.argv.slice(2);
