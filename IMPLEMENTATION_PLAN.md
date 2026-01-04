@@ -97,7 +97,7 @@ Enforcement works
   - Background compilation (`leash watch`)
   - AST Validation (Zero False Positives)
 
-- **Phase 4: Interactive Onboarding ("The TUI")** (Current)
+- **Phase 4: Interactive Onboarding ("The TUI")** (Completed - v1.1.0)
   - Interactive `leash init` wizard (inspired by shadcn)
   - Robust conflict detection and resolution
   - "Spectacular" TUI feedback
@@ -146,7 +146,16 @@ Enforcement works
 // TypeScript strictness
 "no any"; // Type annotations, generics, as expressions
 "no any types"; // All 'no any' + type aliases
-
+### 4.4 Robust API Quota Handling (Completed)
+- **Problem**: Free tier API keys hit rate limits (429 Resource Exhausted).
+- **Solution**: Implemented exponential backoff for LLM calls with 4 attempts.
+  - Detect `429` status code.
+  - Initial delay: 4000ms.
+  - Multiplier: 2x.
+  - Max retries: 4.
+  - Max delay: 60s.
+  - User feedback: "Rate limited, retrying in 4s..."
+- **Implementation**: Wrap `client.models.generateContent` in `src/compiler/llm.ts`.
 // Console restrictions
 "no console.log"; // console.log specifically
 "no console"; // All console methods

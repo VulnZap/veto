@@ -3,6 +3,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import type { Policy } from '../types.js';
 import { SYSTEM_PROMPT } from './prompt.js';
+import { COLORS } from '../ui/colors.js';
 
 // Native JSON schema - GUARANTEES valid output from Gemini
 // Using Type enum for proper schema typing
@@ -142,29 +143,57 @@ The user has indicated the action should be: "${suggestedAction}"
 
 Restriction: "${restriction}"`;
 
-  const response = await client.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: prompt,
-    config: {
-      temperature: 0,
-      maxOutputTokens: 512,
-      responseMimeType: 'application/json',
-      responseSchema: POLICY_SCHEMA,
-    },
-  });
+  const MAX_RETRIES = 4;
+  const INITIAL_DELAY = 4000;
 
-  // response.text is GUARANTEED valid JSON matching schema
-  const text = response.text;
-  if (!text) {
-    throw new Error('Empty response from Gemini');
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await client.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: prompt,
+        config: {
+          temperature: 0,
+          maxOutputTokens: 512,
+          responseMimeType: 'application/json',
+          responseSchema: POLICY_SCHEMA,
+        },
+      });
+      
+      const text = response.text;
+      if (!text) {
+        throw new Error('Empty response from Gemini');
+      }
+
+      const parsed = JSON.parse(text) as Policy;
+
+      // Override action with suggested action if not present
+      if (!parsed.action) {
+        parsed.action = suggestedAction;
+      }
+
+      return parsed;
+
+    } catch (error: any) {
+      if (attempt === MAX_RETRIES) throw error;
+      
+      // Check for 429 Resource Exhausted or 503 Service Unavailable
+      const isRateLimit = error.status === 429 || 
+                          error.message?.includes('429') || 
+                          error.message?.includes('RESOURCE_EXHAUSTED');
+      
+      const isServerOverload = error.status === 503 || error.message?.includes('503');
+
+      if (!isRateLimit && !isServerOverload) throw error;
+
+      // Calculate delay with jitter: delay * 2^attempt + random(0-1000ms)
+      const delay = INITIAL_DELAY * Math.pow(2, attempt) + Math.random() * 1000;
+      const seconds = Math.round(delay / 1000);
+      
+      console.log(`\n${COLORS.warning}Rate limit exceeded. Retrying in ${seconds}s...${COLORS.reset} (Attempt ${attempt + 1}/${MAX_RETRIES})`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
 
-  const parsed = JSON.parse(text) as Policy;
-
-  // Override action with suggested action if not present
-  if (!parsed.action) {
-    parsed.action = suggestedAction;
-  }
-
-  return parsed;
+  throw new Error('Max retries exceeded');
 }
