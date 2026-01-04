@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@google/genai':
-        specifier: ^1.0.0
+        specifier: ^1.34.0
         version: 1.34.0
       chokidar:
         specifier: ^4.0.3

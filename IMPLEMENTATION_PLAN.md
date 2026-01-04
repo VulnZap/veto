@@ -146,16 +146,7 @@ Enforcement works
 // TypeScript strictness
 "no any"; // Type annotations, generics, as expressions
 "no any types"; // All 'no any' + type aliases
-### 4.4 Robust API Quota Handling (Completed)
-- **Problem**: Free tier API keys hit rate limits (429 Resource Exhausted).
-- **Solution**: Implemented exponential backoff for LLM calls with 4 attempts.
-  - Detect `429` status code.
-  - Initial delay: 4000ms.
-  - Multiplier: 2x.
-  - Max retries: 4.
-  - Max delay: 60s.
-  - User feedback: "Rate limited, retrying in 4s..."
-- **Implementation**: Wrap `client.models.generateContent` in `src/compiler/llm.ts`.
+
 // Console restrictions
 "no console.log"; // console.log specifically
 "no console"; // All console methods
@@ -871,31 +862,9 @@ Scanning project with AST validation...
   - `parseLeashFile()` - parses one-rule-per-line format
   - `isSimpleLeashFormat()` - detects simple vs YAML
   - `policiesToConfig()` - converts to internal format
-    -## Phase 4: Interactive Onboarding & Conflict Resolution
+- `policiesToConfig()` - converts to internal format
 
-**Goal**: Deliver a premium, "shadcn-like" CLI experience that guides users through setup and safely manages configuration conflicts.
-
-### 4.1 Interactive `init` Wizard
-
-- **Dependency**: Add `prompts` for TUI.
-- **Flow**:
-  1.  **Welcome**: "Welcome to veto-leash. Let's secure your AI agents."
-  2.  **Detection**: "We detected the following agents: [x] Claude Code, [ ] OpenCode..." (Allow manual selection)
-  3.  **Configuration**: ".leash file not found. Create one with default rules?"
-  4.  **Installation**: "Install native hooks for selected agents?"
-  5.  **Success**: "Setup complete. Policies enforced."
-
-### 4.2 Robust Conflict Management
-
-- **Claude Code**: Continue using "safe sync" (append to `hooks` and `permissions.deny`). Detect if `veto-leash` is already installed and offer to update/reinstall.
-- **OpenCode**: Ensure `opencode.json` updates are non-destructive (merge permissions, don't wipe existing ones).
-- **Cursor/Windsurf**: Check for existing `.cursor/hooks.json` or `.windsurf/hooks.json` and merge carefully.
-
-### 4.3 Polish & "Spectacular" Feedback
-
-- Reuse `ora` or simple logs with colors (already using `colors.ts`).
-- Ensure immediate feedback: "Policy active: no lodash" immediately after sync.
-- "Leash connected" status indicator.3: Background Compilation (✅ DONE)\*\*
+**Task 3.3: Background Compilation (✅ DONE)**
 
 - Created `src/config/watcher.ts` with:
   - `startLeashWatcher()` - watches `.leash` with chokidar
@@ -951,3 +920,35 @@ $ leash sync
 - **3.4 TUI Dashboard** - Deferred (polish, not critical)
 - **3.5 Team Sync** - Git-based sync already works via committed `.leash` file
 - **3.6 Wrapper Mode** - Future enhancement
+
+## Phase 4: Interactive Onboarding & Polish (COMPLETE - 2026-01-04)
+
+### What Was Built
+
+**Task 4.1: Interactive `init` Wizard (✅ DONE)**
+
+- Interactive TUI using `prompts` for agent selection and configuration.
+- Auto-detects installed agents.
+- Guides user through `.leash` creation.
+
+**Task 4.2: Robust Conflict Management (✅ DONE)**
+
+- Safe merging of permissions for OpenCode (`opencode.json`) and Claude Code (`permissions.deny`).
+- Non-destructive updates.
+
+**Task 4.3: Polished Feedback (✅ DONE)**
+
+- Spinners using `ora` (custom `createSpinner` wrapper).
+- Immediate policy enforcement/sync after init.
+
+**Task 4.4: Robust API Quota Handling (✅ DONE)**
+
+- Implemented exponential backoff for Gemini API calls.
+- Handles `429 Resource Exhausted` errors gracefully.
+- Retries with jitter: 4s -> 8s -> 16s.
+
+### Test Results
+
+- **229 tests** passing.
+- Manual verification of TUI and API retry logic.
+- Released as `v1.1.2`.
