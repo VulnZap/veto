@@ -1,6 +1,6 @@
 {
   "name": "veto-leash",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Semantic permissions for AI coding agents — sudo for AI agents",
   "main": "./dist/cli.js",
   "bin": {
