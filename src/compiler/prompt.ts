@@ -51,6 +51,12 @@ LIBRARY RESTRICTION EXAMPLE (MUST FOLLOW THIS PATTERN)
       "fileTypes": ["*.ts", "*.js", "*.tsx", "*.jsx"],
       "reason": "React imports are blocked",
       "mode": "strict"
+    },
+    {
+      "pattern": "<[A-Z][a-zA-Z0-9]*(?:\\\\s[^>]*)?>|<[a-z]+(?:\\\\s[^>]*)?>|<[a-z]+(?:\\\\s[^>]*)*/>",
+      "fileTypes": ["*.jsx", "*.tsx"],
+      "reason": "JSX syntax is not allowed (React is banned)",
+      "mode": "strict"
     }
   ]
 }
