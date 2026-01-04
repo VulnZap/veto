@@ -31,7 +31,10 @@ import { login as cloudLogin, printCloudStatus } from './cloud/index.js';
 import { getActiveSessions } from './wrapper/sessions.js';
 import type { Policy } from './types.js';
 
-const VERSION = '1.1.9';
+// Read version from package.json at build time
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const VERSION = require('../package.json').version;
 
 async function main() {
   const args = process.argv.slice(2);
