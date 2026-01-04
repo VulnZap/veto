@@ -6,14 +6,15 @@ import { join } from 'path';
 import { parse as parseYaml } from 'yaml';
 import {
   validateConfig,
-  generateDefaultConfig,
-  generateLeashYaml,
+  generateSimpleLeash,
   DEFAULT_SETTINGS,
+  DEFAULT_SIMPLE_POLICIES,
   type LeashConfig,
   type CompiledLeashConfig,
 } from './schema.js';
 import { compile } from '../compiler/index.js';
 import { COLORS, SYMBOLS, createSpinner } from '../ui/colors.js';
+import { parseLeashFile, isSimpleLeashFormat, policiesToConfig } from './leash-parser.js';
 
 const LEASH_FILE = '.leash';
 const LEASH_YAML = '.leash.yaml';
@@ -38,6 +39,7 @@ export function findLeashConfig(dir: string = process.cwd()): string | null {
 
 /**
  * Load and parse .leash config
+ * Supports both simple plain-text format and YAML format.
  */
 export function loadLeashConfig(path: string): LeashConfig | null {
   if (!existsSync(path)) {
@@ -47,19 +49,28 @@ export function loadLeashConfig(path: string): LeashConfig | null {
   try {
     const content = readFileSync(path, 'utf-8');
     
-    let config: unknown;
-    
+    // Handle JSON explicitly
     if (path.endsWith('.json')) {
-      config = JSON.parse(content);
-    } else {
-      config = parseYaml(content);
+      const config = JSON.parse(content);
+      if (!validateConfig(config)) {
+        console.error(`${COLORS.error}${SYMBOLS.error} Invalid .leash config${COLORS.reset}`);
+        return null;
+      }
+      return config;
     }
-
+    
+    // Check for simple plain-text format (one rule per line)
+    if (isSimpleLeashFormat(content)) {
+      const policies = parseLeashFile(content);
+      return policiesToConfig(policies);
+    }
+    
+    // Fall back to YAML parsing
+    const config = parseYaml(content);
     if (!validateConfig(config)) {
       console.error(`${COLORS.error}${SYMBOLS.error} Invalid .leash config${COLORS.reset}`);
       return null;
     }
-
     return config;
   } catch (err) {
     console.error(`${COLORS.error}${SYMBOLS.error} Failed to parse .leash: ${(err as Error).message}${COLORS.reset}`);
@@ -99,7 +110,7 @@ export async function compileLeashConfig(
 }
 
 /**
- * Create a new .leash config file
+ * Create a new .leash config file (simple plain-text format)
  */
 export function createLeashConfig(dir: string = process.cwd()): string {
   const path = join(dir, LEASH_FILE);
@@ -109,8 +120,7 @@ export function createLeashConfig(dir: string = process.cwd()): string {
     return path;
   }
 
-  const config = generateDefaultConfig();
-  const content = generateLeashYaml(config);
+  const content = generateSimpleLeash(DEFAULT_SIMPLE_POLICIES);
   
   writeFileSync(path, content);
   console.log(`${COLORS.success}${SYMBOLS.success} Created ${path}${COLORS.reset}`);

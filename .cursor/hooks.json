@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "\"/Users/yaz/.cursor/hooks/veto-leash/validator.sh\""
+      }
+    ]
+  }
+}

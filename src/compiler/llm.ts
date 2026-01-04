@@ -1,30 +1,117 @@
 // src/compiler/llm.ts
 
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import type { Policy } from '../types.js';
 import { SYSTEM_PROMPT } from './prompt.js';
 
 // Native JSON schema - GUARANTEES valid output from Gemini
+// Using Type enum for proper schema typing
 const POLICY_SCHEMA = {
-  type: 'object',
+  type: Type.OBJECT,
   properties: {
     action: {
-      type: 'string',
+      type: Type.STRING,
       enum: ['delete', 'modify', 'execute', 'read'],
+      description: 'The action type this policy restricts',
     },
     include: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Glob patterns for protected files',
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: 'Glob patterns for protected files (can be empty for command-only policies)',
     },
     exclude: {
-      type: 'array',
-      items: { type: 'string' },
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
       description: 'Glob patterns for safe exceptions',
     },
     description: {
-      type: 'string',
+      type: Type.STRING,
       description: 'Human-readable description of what is protected',
+    },
+    commandRules: {
+      type: Type.ARRAY,
+      description: 'Optional command-level rules for tool/command preferences',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          block: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Glob patterns for commands to block (e.g., "npm install*", "sudo *")',
+          },
+          suggest: {
+            type: Type.STRING,
+            description: 'Optional suggestion for alternative command',
+          },
+          reason: {
+            type: Type.STRING,
+            description: 'Human-readable reason for blocking',
+          },
+        },
+        required: ['block', 'reason'],
+      },
+    },
+    contentRules: {
+      type: Type.ARRAY,
+      description: 'Optional content-level rules to check file contents for banned patterns',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          pattern: {
+            type: Type.STRING,
+            description: 'Regex pattern to match in file content (e.g., "import.*lodash", "console\\.log")',
+          },
+          fileTypes: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'File patterns where this rule applies (e.g., ["*.ts", "*.js"])',
+          },
+          reason: {
+            type: Type.STRING,
+            description: 'Human-readable reason for blocking',
+          },
+          suggest: {
+            type: Type.STRING,
+            description: 'Optional suggestion for alternative',
+          },
+        },
+        required: ['pattern', 'fileTypes', 'reason'],
+      },
+    },
+    astRules: {
+      type: Type.ARRAY,
+      description: 'Optional AST-based rules for precise code pattern matching (TypeScript/JavaScript only)',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: {
+            type: Type.STRING,
+            description: 'Unique identifier for this rule (e.g., "no-lodash-import")',
+          },
+          query: {
+            type: Type.STRING,
+            description: 'Tree-sitter S-expression query (e.g., "(import_statement source: (string) @s (#match? @s \\"lodash\\"))")',
+          },
+          languages: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Languages this rule applies to: ["typescript", "javascript"]',
+          },
+          reason: {
+            type: Type.STRING,
+            description: 'Human-readable reason for blocking',
+          },
+          suggest: {
+            type: Type.STRING,
+            description: 'Optional suggestion for alternative',
+          },
+          regexPreFilter: {
+            type: Type.STRING,
+            description: 'Fast pre-filter string - if content does not contain this, skip AST parsing',
+          },
+        },
+        required: ['id', 'query', 'languages', 'reason'],
+      },
     },
   },
   required: ['action', 'include', 'exclude', 'description'],

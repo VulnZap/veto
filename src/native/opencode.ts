@@ -41,8 +41,21 @@ interface StoredPolicies {
 function policyToOpenCodeRules(policy: Policy): Record<string, string> {
   const rules: Record<string, string> = {};
 
+  // === COMMAND RULES (Phase 1) ===
+  // Convert commandRules to OpenCode bash permission rules
+  if (policy.commandRules && policy.commandRules.length > 0) {
+    for (const rule of policy.commandRules) {
+      for (const pattern of rule.block) {
+        // Convert veto-leash command patterns to OpenCode format
+        // "npm install*" -> "npm install*" (same format)
+        rules[pattern] = 'deny';
+      }
+    }
+  }
+
+  // === FILE RULES ===
   // Generate bash permission rules based on action and patterns
-  if (policy.action === 'delete') {
+  if (policy.action === 'delete' && policy.include.length > 0) {
     // Block rm commands for protected files
     for (const pattern of policy.include) {
       // Convert glob to OpenCode wildcard format
@@ -70,7 +83,7 @@ function policyToOpenCodeRules(policy: Policy): Record<string, string> {
     }
   }
 
-  if (policy.action === 'modify') {
+  if (policy.action === 'modify' && policy.include.length > 0) {
     // Block modification commands for protected files
     for (const pattern of policy.include) {
       const ocPattern = pattern
@@ -82,7 +95,7 @@ function policyToOpenCodeRules(policy: Policy): Record<string, string> {
     }
   }
 
-  if (policy.action === 'execute') {
+  if (policy.action === 'execute' && policy.include.length > 0) {
     // Block execution for protected patterns
     for (const pattern of policy.include) {
       const ocPattern = pattern

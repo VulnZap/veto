@@ -5,11 +5,31 @@ import { findBuiltin } from './builtins.js';
 import { getFromCache, saveToCache } from './cache.js';
 import { compileWithLLM } from './llm.js';
 
+/**
+ * Detect if the restriction is about command/tool preferences
+ * rather than file protection
+ */
+function isCommandPreference(phrase: string): boolean {
+  const commandKeywords = [
+    /\b(prefer|use)\s+(pnpm|bun|yarn|npm)\b/,
+    /\b(pnpm|bun|yarn)\s+(over|not|instead)/,
+    /\bno\s+(sudo|force.?push|hard.?reset)\b/,
+    /\b(vitest|jest|pytest)\s+(over|not|instead)/,
+    /\buse\s+(vitest|pytest|docker.?compose)\b/,
+    /\bno\s+curl\b/,
+  ];
+  
+  return commandKeywords.some(pattern => pattern.test(phrase));
+}
+
 export async function compile(restriction: string): Promise<Policy> {
   const normalized = restriction.toLowerCase().trim();
 
+  // Check if this is a command preference (not file-based)
+  const isCommand = isCommandPreference(normalized);
+
   // Extract action from input
-  let action: Policy['action'] = 'modify';
+  let action: Policy['action'] = isCommand ? 'execute' : 'modify';
   let targetPhrase = normalized;
 
   const actionPatterns: Array<[RegExp, Policy['action']]> = [
@@ -18,9 +38,11 @@ export async function compile(restriction: string): Promise<Policy> {
     [/^(don'?t\s+)?(run|execute|running|executing)\s+/, 'execute'],
     [/^(don'?t\s+)?(read|view|access)\s+/, 'read'],
     [/^(protect|preserve|keep|save)\s+/, 'modify'],
+    // Tool preferences default to execute
+    [/^(prefer|use)\s+/, 'execute'],
     // "no running X" → execute, "no X" (files) → modify
     [/^no\s+(running|executing)\s+/, 'execute'],
-    [/^no\s+/, 'modify'], // Default "no X" to modify (protects files)
+    [/^no\s+/, isCommand ? 'execute' : 'modify'],
   ];
 
   for (const [pattern, act] of actionPatterns) {
@@ -31,16 +53,25 @@ export async function compile(restriction: string): Promise<Policy> {
     }
   }
 
-  // Strip filler words
-  targetPhrase = targetPhrase
-    .replace(/^(any|all|the)\s+/g, '')
-    .replace(/\s+(files?|directories?|folders?)$/g, '')
-    .trim();
+  // Strip filler words (but preserve tool names)
+  if (!isCommand) {
+    targetPhrase = targetPhrase
+      .replace(/^(any|all|the)\s+/g, '')
+      .replace(/\s+(files?|directories?|folders?)$/g, '')
+      .trim();
+  }
 
   // Layer 1: Builtins (instant)
   const builtin = findBuiltin(targetPhrase);
   if (builtin) {
+    // Preserve commandRules from builtin
     return { action, ...builtin };
+  }
+
+  // Also try the original restriction for builtins
+  const builtinOriginal = findBuiltin(normalized);
+  if (builtinOriginal) {
+    return { action, ...builtinOriginal };
   }
 
   // Layer 2: Cache (instant)

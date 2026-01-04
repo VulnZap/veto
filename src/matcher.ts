@@ -1,9 +1,13 @@
 // src/matcher.ts
 
 import micromatch from 'micromatch';
-import type { Policy } from './types.js';
+import type { Policy, CommandCheckResult } from './types.js';
+import { checkCommand, extractFileTargets } from './compiler/commands.js';
 
 const { isMatch } = micromatch;
+
+// Re-export command functions for convenience
+export { checkCommand, extractFileTargets } from './compiler/commands.js';
 
 const MATCH_OPTIONS = {
   basename: true, // *.test.ts matches src/foo.test.ts
@@ -86,4 +90,52 @@ export function getExcludedFiles(files: string[], policy: Policy): string[] {
 
     return policy.exclude.some((p) => isMatch(f, p, MATCH_OPTIONS));
   });
+}
+
+/**
+ * Full policy check for a bash command.
+ * Checks both file targets (for delete/modify actions) and command rules.
+ */
+export function checkBashCommand(
+  command: string,
+  policy: Policy
+): { allowed: boolean; reason?: string; suggest?: string } {
+  // First check command rules (fast path)
+  const cmdResult = checkCommand(command, policy);
+  if (cmdResult.blocked && cmdResult.rule) {
+    return {
+      allowed: false,
+      reason: cmdResult.rule.reason,
+      suggest: cmdResult.rule.suggest,
+    };
+  }
+
+  // Then check file targets for file-based policies
+  if (policy.include.length > 0) {
+    const targets = extractFileTargets(command, policy.action);
+    for (const target of targets) {
+      if (isProtected(target, policy)) {
+        return {
+          allowed: false,
+          reason: policy.description,
+        };
+      }
+    }
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Check if a policy has any command rules.
+ */
+export function hasCommandRules(policy: Policy): boolean {
+  return Array.isArray(policy.commandRules) && policy.commandRules.length > 0;
+}
+
+/**
+ * Check if a policy is command-only (no file patterns).
+ */
+export function isCommandOnlyPolicy(policy: Policy): boolean {
+  return policy.include.length === 0 && hasCommandRules(policy);
 }

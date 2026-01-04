@@ -105,9 +105,16 @@ describe('BUILTINS structure', () => {
   it('all entries have required fields', () => {
     for (const [key, value] of Object.entries(BUILTINS)) {
       expect(value.include, `${key} should have include`).toBeInstanceOf(Array);
-      expect(value.include.length, `${key} include should not be empty`).toBeGreaterThan(0);
       expect(value.exclude, `${key} should have exclude`).toBeInstanceOf(Array);
       expect(typeof value.description, `${key} should have description`).toBe('string');
+      
+      // Either include patterns or commandRules must be present
+      const hasFileRules = value.include.length > 0;
+      const hasCommandRules = Array.isArray(value.commandRules) && value.commandRules.length > 0;
+      expect(
+        hasFileRules || hasCommandRules, 
+        `${key} should have either include patterns or commandRules`
+      ).toBe(true);
     }
   });
 
@@ -118,6 +125,18 @@ describe('BUILTINS structure', () => {
       }
       for (const pattern of value.exclude) {
         expect(typeof pattern, `${key} exclude patterns should be strings`).toBe('string');
+      }
+    }
+  });
+
+  it('all commandRules have required fields', () => {
+    for (const [key, value] of Object.entries(BUILTINS)) {
+      if (value.commandRules) {
+        for (const rule of value.commandRules) {
+          expect(Array.isArray(rule.block), `${key} commandRule should have block array`).toBe(true);
+          expect(rule.block.length, `${key} commandRule block should not be empty`).toBeGreaterThan(0);
+          expect(typeof rule.reason, `${key} commandRule should have reason`).toBe('string');
+        }
       }
     }
   });

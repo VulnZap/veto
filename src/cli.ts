@@ -13,6 +13,7 @@ import {
   addPolicyToAgents,
   listPolicies,
   AGENTS,
+  detectInstalledAgents,
 } from './native/index.js';
 import { startWatchdog, stopWatchdog } from './watchdog/index.js';
 import {
@@ -20,13 +21,14 @@ import {
   loadLeashConfig,
   compileLeashConfig,
   createLeashConfig,
+  hasLeashConfig,
 } from './config/loader.js';
 import { printAuditLog, clearAuditLog } from './audit/index.js';
 import { login as cloudLogin, printCloudStatus } from './cloud/index.js';
 import { getActiveSessions } from './wrapper/sessions.js';
 import type { Policy } from './types.js';
 
-const VERSION = '0.1.2';
+const VERSION = '0.2.0';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -68,7 +70,7 @@ async function main() {
       await runUninstall(args[1]);
       break;
     case 'init':
-      runInit();
+      await runInit();
       break;
     case 'sync':
       await runSync(args[1]);
@@ -136,17 +138,44 @@ async function runWrapper(agent: string, restriction: string) {
   );
   console.log(`  ${COLORS.dim}Policy:${COLORS.reset} ${policy.description}`);
   console.log(`  ${COLORS.dim}Action:${COLORS.reset} ${policy.action}\n`);
-  console.log(`  ${COLORS.dim}Protecting:${COLORS.reset}`);
-  console.log(`    ${policy.include.slice(0, 5).join('  ')}`);
-  if (policy.include.length > 5) {
-    console.log(
-      `    ${COLORS.dim}...and ${policy.include.length - 5} more${COLORS.reset}`
-    );
+  
+  // Show file patterns if present
+  if (policy.include.length > 0) {
+    console.log(`  ${COLORS.dim}Protecting files:${COLORS.reset}`);
+    console.log(`    ${policy.include.slice(0, 5).join('  ')}`);
+    if (policy.include.length > 5) {
+      console.log(
+        `    ${COLORS.dim}...and ${policy.include.length - 5} more${COLORS.reset}`
+      );
+    }
+    if (policy.exclude.length > 0) {
+      console.log(`\n  ${COLORS.dim}Allowing (exceptions):${COLORS.reset}`);
+      console.log(`    ${policy.exclude.join('  ')}`);
+    }
   }
-  if (policy.exclude.length > 0) {
-    console.log(`\n  ${COLORS.dim}Allowing (exceptions):${COLORS.reset}`);
-    console.log(`    ${policy.exclude.join('  ')}`);
+  
+  // Show command rules if present
+  if (policy.commandRules && policy.commandRules.length > 0) {
+    console.log(`  ${COLORS.dim}Blocking commands:${COLORS.reset}`);
+    for (const rule of policy.commandRules) {
+      console.log(`    ${COLORS.error}${rule.block.slice(0, 3).join(', ')}${COLORS.reset}`);
+      if (rule.suggest) {
+        console.log(`    ${COLORS.dim}→ Use:${COLORS.reset} ${rule.suggest}`);
+      }
+    }
   }
+
+  // Show content rules if present (Phase 2)
+  if (policy.contentRules && policy.contentRules.length > 0) {
+    console.log(`  ${COLORS.dim}Checking content for:${COLORS.reset}`);
+    for (const rule of policy.contentRules.slice(0, 3)) {
+      console.log(`    ${COLORS.error}${rule.reason}${COLORS.reset}`);
+    }
+    if (policy.contentRules.length > 3) {
+      console.log(`    ${COLORS.dim}...and ${policy.contentRules.length - 3} more rules${COLORS.reset}`);
+    }
+  }
+  
   console.log(`\n  Press Ctrl+C to exit\n`);
 
   // Start daemon
@@ -209,14 +238,46 @@ async function runExplain(restriction: string) {
   console.log('\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n');
   console.log(`Restriction: "${restriction}"\n`);
   console.log(`Action: ${policy.action}\n`);
-  console.log(`Patterns:`);
-  console.log(
-    `  ${COLORS.dim}include:${COLORS.reset} ${policy.include.join(', ')}`
-  );
-  console.log(
-    `  ${COLORS.dim}exclude:${COLORS.reset} ${policy.exclude.join(', ') || '(none)'}`
-  );
-  console.log(`\nDescription: ${policy.description}`);
+  
+  // Show file patterns if present
+  if (policy.include.length > 0) {
+    console.log(`${COLORS.bold}File Patterns:${COLORS.reset}`);
+    console.log(
+      `  ${COLORS.dim}include:${COLORS.reset} ${policy.include.join(', ')}`
+    );
+    console.log(
+      `  ${COLORS.dim}exclude:${COLORS.reset} ${policy.exclude.join(', ') || '(none)'}`
+    );
+  }
+  
+  // Show command rules if present
+  if (policy.commandRules && policy.commandRules.length > 0) {
+    console.log(`${COLORS.bold}Command Rules:${COLORS.reset}`);
+    for (const rule of policy.commandRules) {
+      console.log(`  ${COLORS.error}block:${COLORS.reset} ${rule.block.join(', ')}`);
+      if (rule.suggest) {
+        console.log(`  ${COLORS.success}suggest:${COLORS.reset} ${rule.suggest}`);
+      }
+      console.log(`  ${COLORS.dim}reason:${COLORS.reset} ${rule.reason}`);
+      console.log('');
+    }
+  }
+
+  // Show content rules if present (Phase 2)
+  if (policy.contentRules && policy.contentRules.length > 0) {
+    console.log(`${COLORS.bold}Content Rules:${COLORS.reset}`);
+    for (const rule of policy.contentRules) {
+      console.log(`  ${COLORS.error}pattern:${COLORS.reset} ${rule.pattern}`);
+      console.log(`  ${COLORS.dim}fileTypes:${COLORS.reset} ${rule.fileTypes.join(', ')}`);
+      if (rule.suggest) {
+        console.log(`  ${COLORS.success}suggest:${COLORS.reset} ${rule.suggest}`);
+      }
+      console.log(`  ${COLORS.dim}reason:${COLORS.reset} ${rule.reason}`);
+      console.log('');
+    }
+  }
+  
+  console.log(`${COLORS.dim}Description:${COLORS.reset} ${policy.description}`);
   console.log(`\nRun 'leash <agent> "${restriction}"' to enforce.\n`);
 }
 
@@ -401,10 +462,45 @@ async function runUninstall(agent: string) {
   }
 }
 
-function runInit() {
-  createLeashConfig();
-  console.log(`\nEdit .leash to customize your policies.`);
-  console.log(`Then run: ${COLORS.dim}leash sync${COLORS.reset}\n`);
+async function runInit() {
+  console.log(`\n${COLORS.bold}Detecting AI coding agents...${COLORS.reset}`);
+  
+  // Detect installed agents
+  const detected = detectInstalledAgents();
+  
+  if (detected.length === 0) {
+    console.log(`  ${COLORS.dim}No agents detected${COLORS.reset}`);
+    console.log(`\n${COLORS.dim}Tip: Install Claude Code, Cursor, OpenCode, or Windsurf first.${COLORS.reset}`);
+  } else {
+    for (const agent of detected) {
+      console.log(`  ${COLORS.success}${SYMBOLS.success} ${agent.name} found${COLORS.reset}`);
+    }
+  }
+  
+  // Create .leash file if not exists
+  if (!hasLeashConfig()) {
+    console.log(`\n${COLORS.bold}Creating .leash config...${COLORS.reset}`);
+    createLeashConfig();
+  } else {
+    console.log(`\n${COLORS.success}${SYMBOLS.success} .leash already exists${COLORS.reset}`);
+  }
+  
+  // Install hooks for detected agents with native support
+  const nativeAgents = detected.filter(a => a.hasNativeHooks);
+  if (nativeAgents.length > 0) {
+    console.log(`\n${COLORS.bold}Installing enforcement hooks...${COLORS.reset}`);
+    for (const agent of nativeAgents) {
+      try {
+        await installAgent(agent.id);
+      } catch {
+        console.log(`  ${COLORS.warning}${SYMBOLS.warning} Could not install ${agent.name} hooks${COLORS.reset}`);
+      }
+    }
+  }
+  
+  console.log(`\n${COLORS.success}${SYMBOLS.success} Done!${COLORS.reset} Policies enforced automatically.`);
+  console.log(`\nEdit ${COLORS.bold}.leash${COLORS.reset} to customize your policies.`);
+  console.log(`Run ${COLORS.dim}leash sync${COLORS.reset} to apply changes.\n`);
 }
 
 async function runSync(agent?: string) {
@@ -485,9 +581,9 @@ ${COLORS.bold}USAGE${COLORS.reset}
 
 ${COLORS.bold}AGENTS (native integration)${COLORS.reset}
   cc, claude-code    Claude Code     PreToolUse hooks
-  ws, windsurf       Windsurf        Cascade hooks
   oc, opencode       OpenCode        permission.bash rules
-  cursor             Cursor          .cursorrules (guidance only)
+  cursor             Cursor CLI      hooks.json (v1.7+)
+  ws, windsurf       Windsurf        Cascade hooks
   aider              Aider           .aider.conf.yml read-only
 
 ${COLORS.bold}AGENTS (wrapper/watchdog)${COLORS.reset}

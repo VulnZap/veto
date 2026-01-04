@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "pre_write_code": [
+      {
+        "command": "python3 \"/Users/yaz/.codeium/windsurf/veto-leash/validator.py\"",
+        "show_output": true
+      }
+    ],
+    "pre_run_command": [
+      {
+        "command": "python3 \"/Users/yaz/.codeium/windsurf/veto-leash/validator.py\"",
+        "show_output": true
+      }
+    ]
+  }
+}

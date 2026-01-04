@@ -1,6 +1,9 @@
 // src/native/index.ts
 // Agent registry and unified interface for native integrations
 
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 import type { Policy } from '../types.js';
 import { COLORS, SYMBOLS } from '../ui/colors.js';
 
@@ -21,6 +24,9 @@ import {
   uninstallWindsurfHooks,
 } from './windsurf.js';
 import {
+  installCursorHooks,
+  uninstallCursorHooks,
+  addCursorPolicy,
   installCursorRules,
   uninstallCursorRules,
 } from './cursor.js';
@@ -43,35 +49,35 @@ export const AGENTS: AgentInfo[] = [
     name: 'Claude Code',
     aliases: ['cc', 'claude', 'claude-code'],
     hasNativeHooks: true,
-    description: 'PreToolUse hooks for Bash/Write/Edit',
+    description: 'PreToolUse hooks with AST validation (Bash/Write/Edit)',
   },
   {
     id: 'opencode',
     name: 'OpenCode',
     aliases: ['oc', 'opencode'],
     hasNativeHooks: true,
-    description: 'permission.bash rules in opencode.json',
+    description: 'permission.bash deny rules (command-level only)',
   },
   {
     id: 'windsurf',
     name: 'Windsurf',
     aliases: ['ws', 'windsurf', 'cascade'],
     hasNativeHooks: true,
-    description: 'Cascade hooks for pre_write_code/pre_run_command',
+    description: 'Cascade hooks: pre_write_code, pre_run_command (exit 2 blocks)',
   },
   {
     id: 'cursor',
-    name: 'Cursor',
-    aliases: ['cursor'],
-    hasNativeHooks: false,
-    description: '.cursorrules AI guidance (not enforcement)',
+    name: 'Cursor CLI',
+    aliases: ['cursor', 'cursor-cli'],
+    hasNativeHooks: true,
+    description: 'beforeShellExecution hooks + Write() permissions (v1.7+)',
   },
   {
     id: 'aider',
     name: 'Aider',
     aliases: ['aider'],
     hasNativeHooks: false,
-    description: '.aider.conf.yml read-only files',
+    description: '.aider.conf.yml read: option (read-only context)',
   },
   {
     id: 'codex',
@@ -133,7 +139,7 @@ export async function installAgent(
       return true;
       
     case 'cursor':
-      await installCursorRules();
+      await installCursorHooks(options.global ? 'global' : 'project');
       return true;
       
     case 'aider':
@@ -186,6 +192,8 @@ export async function uninstallAgent(
       return true;
       
     case 'cursor':
+      await uninstallCursorHooks(options.global ? 'global' : 'project');
+      // Also clean up legacy .cursorrules
       await uninstallCursorRules();
       return true;
       
@@ -214,6 +222,50 @@ export async function addPolicyToAgents(
 
   // Windsurf
   await addWindsurfPolicy(policy, name);
+
+  // Cursor
+  await addCursorPolicy(policy, name);
+}
+
+/**
+ * Detect installed AI coding agents by checking for their config directories.
+ * Only returns agents with native hook support.
+ */
+export function detectInstalledAgents(): AgentInfo[] {
+  const detected: AgentInfo[] = [];
+  const home = homedir();
+
+  // Claude Code: ~/.claude/
+  if (existsSync(join(home, '.claude'))) {
+    const agent = AGENTS.find(a => a.id === 'claude-code');
+    if (agent) detected.push(agent);
+  }
+
+  // OpenCode: ~/.opencode/
+  if (existsSync(join(home, '.opencode'))) {
+    const agent = AGENTS.find(a => a.id === 'opencode');
+    if (agent) detected.push(agent);
+  }
+
+  // Cursor: ~/.cursor/
+  if (existsSync(join(home, '.cursor'))) {
+    const agent = AGENTS.find(a => a.id === 'cursor');
+    if (agent) detected.push(agent);
+  }
+
+  // Windsurf: ~/.windsurf/ or ~/.codeium/
+  if (existsSync(join(home, '.windsurf')) || existsSync(join(home, '.codeium'))) {
+    const agent = AGENTS.find(a => a.id === 'windsurf');
+    if (agent) detected.push(agent);
+  }
+
+  // Aider: check if .aider.conf.yml exists in home or cwd
+  if (existsSync(join(home, '.aider.conf.yml')) || existsSync('.aider.conf.yml')) {
+    const agent = AGENTS.find(a => a.id === 'aider');
+    if (agent) detected.push(agent);
+  }
+
+  return detected;
 }
 
 function printSupportedAgents(): void {

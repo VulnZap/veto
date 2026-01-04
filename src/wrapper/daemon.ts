@@ -7,7 +7,7 @@ import type {
   CheckResponse,
   SessionState,
 } from '../types.js';
-import { isProtected } from '../matcher.js';
+import { isProtected, checkCommand } from '../matcher.js';
 import { COLORS, SYMBOLS } from '../ui/colors.js';
 import { logBlocked } from '../audit/index.js';
 import { registerSession, unregisterSession } from './sessions.js';
@@ -73,7 +73,46 @@ export class VetoDaemon {
   }
 
   check(req: CheckRequest): CheckResponse {
-    // Action must match policy
+    // === COMMAND RULES CHECK (Phase 1) ===
+    // Check command rules first (fast path for tool preferences)
+    if (req.command && this.policy.commandRules && this.policy.commandRules.length > 0) {
+      const cmdResult = checkCommand(req.command, this.policy);
+      if (cmdResult.blocked && cmdResult.rule) {
+        this.state.blockedCount++;
+        this.state.blockedActions.push({
+          time: new Date(),
+          action: 'command',
+          target: req.command,
+        });
+
+        // Log to audit
+        logBlocked(req.command, 'command', cmdResult.rule.reason, this.state.agent);
+
+        // Print block notification
+        console.log(
+          `\n${COLORS.error}${SYMBOLS.blocked} BLOCKED${COLORS.reset}`
+        );
+        console.log(`   ${COLORS.dim}Command:${COLORS.reset} ${req.command}`);
+        console.log(
+          `   ${COLORS.dim}Policy:${COLORS.reset} ${cmdResult.rule.reason}`
+        );
+        if (cmdResult.rule.suggest) {
+          console.log(
+            `   ${COLORS.info}Try:${COLORS.reset} ${cmdResult.rule.suggest}`
+          );
+        }
+        console.log(`\n   ${COLORS.success}Command not executed.${COLORS.reset}\n`);
+
+        return { 
+          allowed: false, 
+          reason: cmdResult.rule.reason,
+          suggest: cmdResult.rule.suggest,
+        };
+      }
+    }
+
+    // === FILE RULES CHECK ===
+    // Action must match policy for file-based checks
     if (req.action !== this.policy.action) {
       this.state.allowedCount++;
       return { allowed: true };

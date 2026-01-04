@@ -134,3 +134,24 @@ export function generateLeashYaml(config: LeashConfig): string {
   lines.push('');
   return lines.join('\n');
 }
+
+/**
+ * Default policies for simple .leash format
+ */
+export const DEFAULT_SIMPLE_POLICIES = [
+  'no any types',
+  'no console.log',
+];
+
+/**
+ * Generate simple plain-text .leash content
+ */
+export function generateSimpleLeash(policies: string[]): string {
+  return [
+    '# .leash - Policies for AI coding agents',
+    '# One policy per line. Lines starting with # are comments.',
+    '',
+    ...policies,
+    '',
+  ].join('\n');
+}
