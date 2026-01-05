@@ -1,0 +1,95 @@
+{
+  "name": "veto",
+  "version": "0.1.0",
+  "description": "A guardrail system that intercepts and validates AI agent tool calls",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "bin": {
+    "veto": "./dist/cli/bin.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "benchmark": "node dist/benchmark/cli.js",
+    "benchmark:dev": "tsx src/benchmark/cli.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "guardrail",
+    "tool-calls",
+    "safety",
+    "llm",
+    "openai",
+    "anthropic",
+    "gemini"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@vitest/coverage-v8": "^4.0.16",
+    "openai": "^4.77.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.16"
+  },
+  "peerDependencies": {
+    "openai": "^4.0.0",
+    "zod": "^3.22.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./providers/*": {
+      "types": "./dist/providers/*.d.ts",
+      "import": "./dist/providers/*.js"
+    },
+    "./rules": {
+      "types": "./dist/rules/index.d.ts",
+      "import": "./dist/rules/index.js"
+    },
+    "./config": {
+      "types": "./dist/cli/config.d.ts",
+      "import": "./dist/cli/config.js"
+    },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js"
+    },
+    "./kernel": {
+      "types": "./dist/kernel/index.d.ts",
+      "import": "./dist/kernel/index.js"
+    },
+    "./benchmark": {
+      "types": "./dist/benchmark/index.d.ts",
+      "import": "./dist/benchmark/index.js"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.8.2"
+  }
+}
