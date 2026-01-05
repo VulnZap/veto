@@ -17,21 +17,18 @@ import (
 	"github.com/vulnzap/leash/internal/engine"
 )
 
-const version = "2.0.3"
+const version = "2.0.4"
 
-// ASCII Logo
+// ASCII Logo - VETO branding
 const logo = `
- ██▒   █▓▓█████▄▄▄█████▓ ▒█████  
-▓██░   █▒▓█   ▀▓  ██▒ ▓▒▒██▒  ██▒
- ▓██  █▒░▒███  ▒ ▓██░ ▒░▒██░  ██▒
-  ▒██ █░░▒▓█  ▄░ ▓██▓ ░ ▒██   ██░
-   ▒▀█░  ░▒████▒ ▒██▒ ░ ░ ████▓▒░
-   ░ ▐░  ░░ ▒░ ░ ▒ ░░   ░ ▒░▒░▒░ 
-   ░ ░░   ░ ░  ░   ░      ░ ▒ ▒░ 
-     ░░     ░    ░      ░ ░ ░ ▒  
-      ░     ░  ░            ░ ░  `
+    @@     @@    @@@@@@@       @@       @@@@@@@     
+    @@     @@   @@     @@      @@      @@     @@    
+     @@   @@    @@@@@@@@@  @@@@@@@@@@  @@     @@    
+      @@ @@     @@             @@      @@     @@    
+      @@ @@     @@             @@      @@     @@    
+       @@@       @@@@@@@   @@@@@@@@@@   @@@@@@@     `
 
-const logoSmall = `┃▌║█║▌│║▌│║▌║▌█║ veto`
+const logoSmall = `◼ veto`
 
 // Views
 type view int
@@ -45,12 +42,13 @@ const (
 	viewHelp
 )
 
-// Theme - adaptive colors
+// Theme - VETO brand colors
+// Orange: #f5a524, White: #f5f5f5, Black: #000000
 type theme struct {
 	primary    lipgloss.AdaptiveColor
 	secondary  lipgloss.AdaptiveColor
 	muted      lipgloss.AdaptiveColor
-	accent     lipgloss.AdaptiveColor
+	accent     lipgloss.AdaptiveColor // Veto Orange
 	success    lipgloss.AdaptiveColor
 	warning    lipgloss.AdaptiveColor
 	error      lipgloss.AdaptiveColor
@@ -60,16 +58,17 @@ type theme struct {
 }
 
 var t = theme{
-	primary:    lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#ffffff"},
-	secondary:  lipgloss.AdaptiveColor{Light: "#444444", Dark: "#cccccc"},
-	muted:      lipgloss.AdaptiveColor{Light: "#888888", Dark: "#666666"},
-	accent:     lipgloss.AdaptiveColor{Light: "#6366f1", Dark: "#818cf8"},
+	// Dark mode: white text on black | Light mode: black text on white
+	primary:    lipgloss.AdaptiveColor{Light: "#000000", Dark: "#f5f5f5"},
+	secondary:  lipgloss.AdaptiveColor{Light: "#333333", Dark: "#cccccc"},
+	muted:      lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"},
+	accent:     lipgloss.AdaptiveColor{Light: "#f5a524", Dark: "#f5a524"}, // Veto Orange - same in both
 	success:    lipgloss.AdaptiveColor{Light: "#059669", Dark: "#34d399"},
-	warning:    lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#fbbf24"},
+	warning:    lipgloss.AdaptiveColor{Light: "#f5a524", Dark: "#f5a524"}, // Use orange for warnings too
 	error:      lipgloss.AdaptiveColor{Light: "#dc2626", Dark: "#f87171"},
 	border:     lipgloss.AdaptiveColor{Light: "#e5e5e5", Dark: "#333333"},
-	highlight:  lipgloss.AdaptiveColor{Light: "#f3f4f6", Dark: "#1f1f1f"},
-	background: lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#0a0a0a"},
+	highlight:  lipgloss.AdaptiveColor{Light: "#fff7ed", Dark: "#1a1a1a"}, // Slight orange tint in light
+	background: lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#000000"},
 }
 
 // Styles
