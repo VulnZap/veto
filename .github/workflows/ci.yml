@@ -39,8 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -57,8 +55,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -75,8 +71,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -95,10 +89,10 @@ jobs:
         with:
           go-version: '1.22'
           cache-dependency-path: packages/cli/go/go.sum
-      - name: Build Go binaries
+      - name: Build Go binary
         working-directory: packages/cli/go
         run: |
-          go build -o veto-linux-amd64 .
+          go build -ldflags="-s -w" -o veto-linux-amd64 ./cmd/veto
           echo "Built successfully"
 
   # Final status check (required for branch protection)
