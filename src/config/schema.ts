@@ -137,10 +137,11 @@ export function generateLeashYaml(config: LeashConfig): string {
 
 /**
  * Default policies for simple .leash format
+ * These are universal and work across all projects/languages
  */
 export const DEFAULT_SIMPLE_POLICIES = [
-  'no any types',
-  'no console.log',
+  "protect .env",
+  "don't delete test files",
 ];
 
 /**

@@ -79,7 +79,7 @@ export function loadLeashConfig(path: string): LeashConfig | null {
 }
 
 /**
- * Compile all policies in a .leash config
+ * Compile all policies in a .leash config (parallel for performance)
  */
 export async function compileLeashConfig(
   config: LeashConfig
@@ -91,21 +91,43 @@ export async function compileLeashConfig(
     cloud: config.cloud,
   };
 
+  if (config.policies.length === 0) {
+    return compiled;
+  }
+
   const spinner = createSpinner(`Compiling ${config.policies.length} policies...`);
 
-  for (const restriction of config.policies) {
-    try {
+  // Compile all policies in parallel for performance
+  const results = await Promise.allSettled(
+    config.policies.map(async (restriction) => {
       const policy = await compile(restriction);
-      compiled.policies.push({ restriction, policy });
-    } catch (err) {
-      spinner.stop();
-      console.error(`${COLORS.error}${SYMBOLS.error} Failed to compile: "${restriction}"${COLORS.reset}`);
-      console.error(`  ${(err as Error).message}`);
-      throw err;
+      return { restriction, policy };
+    })
+  );
+
+  spinner.stop();
+
+  // Process results, collecting errors
+  const errors: string[] = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      compiled.policies.push(result.value);
+    } else {
+      errors.push(result.reason?.message || 'Unknown error');
     }
   }
 
-  spinner.stop();
+  if (errors.length > 0) {
+    console.error(`${COLORS.error}${SYMBOLS.error} Failed to compile ${errors.length} policies:${COLORS.reset}`);
+    for (const err of errors) {
+      console.error(`  ${err}`);
+    }
+    if (compiled.policies.length === 0) {
+      throw new Error('All policies failed to compile');
+    }
+    console.log(`${COLORS.warning}${SYMBOLS.warning} Continuing with ${compiled.policies.length} successful policies${COLORS.reset}`);
+  }
+
   return compiled;
 }
 

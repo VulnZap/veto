@@ -68,7 +68,7 @@ async function main() {
       await runInstall(args[1]);
       break;
     case 'add':
-      await runAdd(args.slice(1).join(' '));
+      await runAdd(args.slice(1));
       break;
     case 'list':
       runList();
@@ -408,50 +408,104 @@ async function runInstall(agent: string) {
   }
 }
 
-async function runAdd(restriction: string) {
-  if (!restriction) {
+async function runAdd(restrictions: string[]) {
+  // Parse restrictions - support both quoted strings and separate args
+  const policies: string[] = [];
+  let current = '';
+  
+  for (const arg of restrictions) {
+    if (current) {
+      current += ' ' + arg;
+      if (arg.endsWith('"') || arg.endsWith("'")) {
+        policies.push(current.replace(/^["']|["']$/g, ''));
+        current = '';
+      }
+    } else if ((arg.startsWith('"') || arg.startsWith("'")) && !(arg.endsWith('"') || arg.endsWith("'"))) {
+      current = arg;
+    } else {
+      policies.push(arg.replace(/^["']|["']$/g, ''));
+    }
+  }
+  if (current) policies.push(current.replace(/^["']|["']$/g, ''));
+
+  if (policies.length === 0 || policies.every(p => !p.trim())) {
     console.error(
       `${COLORS.error}${SYMBOLS.error} Error: No restriction provided${COLORS.reset}`
     );
+    console.log(`\nUsage: leash add "policy1" "policy2" ...`);
+    console.log(`Example: leash add "protect .env" "no console.log"`);
     process.exit(1);
   }
 
-  const spinner = createSpinner('Compiling restriction...');
-  let policy: Policy;
+  const spinner = createSpinner(`Compiling ${policies.length} ${policies.length === 1 ? 'policy' : 'policies'}...`);
 
-  try {
-    policy = await compile(restriction);
-    spinner.stop();
-  } catch (err) {
-    spinner.stop();
-    if ((err as Error).message === 'GEMINI_API_KEY not set') {
-      console.error(
-        `${COLORS.error}${SYMBOLS.error} Error: GEMINI_API_KEY not set${COLORS.reset}\n`
-      );
-      console.log('  Get a free API key: https://aistudio.google.com/apikey\n');
-      process.exit(1);
+  // Compile all policies in parallel
+  const results = await Promise.allSettled(
+    policies.map(async (restriction) => {
+      const policy = await compile(restriction);
+      return { restriction, policy };
+    })
+  );
+
+  spinner.stop();
+
+  // Process results
+  const successful: Array<{ restriction: string; policy: Policy }> = [];
+  const failed: Array<{ restriction: string; error: string }> = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === 'fulfilled') {
+      successful.push(result.value);
+    } else {
+      const errMsg = result.reason?.message || 'Unknown error';
+      if (errMsg === 'GEMINI_API_KEY not set') {
+        console.error(
+          `${COLORS.error}${SYMBOLS.error} Error: GEMINI_API_KEY not set${COLORS.reset}\n`
+        );
+        console.log('  Get a free API key: https://aistudio.google.com/apikey\n');
+        process.exit(1);
+      }
+      failed.push({ restriction: policies[i], error: errMsg });
     }
-    throw err;
   }
 
-  // Generate policy name from restriction
-  const policyName = restriction
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 50);
+  // Save successful policies
+  for (const { restriction, policy } of successful) {
+    const policyName = restriction
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50);
+    await addPolicyToAgents(policy, policyName);
+  }
 
-  // Save to all agent policy stores
-  await addPolicyToAgents(policy, policyName);
+  // Report results
+  if (successful.length > 0) {
+    console.log(`\n${COLORS.success}${SYMBOLS.success} ${successful.length} ${successful.length === 1 ? 'policy' : 'policies'} added${COLORS.reset}\n`);
+    for (const { restriction, policy } of successful) {
+      console.log(`  ${COLORS.success}+${COLORS.reset} "${restriction}"`);
+      if (policy.commandRules?.length) {
+        console.log(`    ${COLORS.dim}Commands blocked: ${policy.commandRules.flatMap(r => r.block).slice(0, 3).join(', ')}${COLORS.reset}`);
+      } else if (policy.include.length) {
+        console.log(`    ${COLORS.dim}Files: ${policy.include.slice(0, 3).join(', ')}${COLORS.reset}`);
+      }
+    }
+  }
 
-  console.log(`\n${COLORS.success}${SYMBOLS.success} Policy added${COLORS.reset}\n`);
-  console.log(`  ${COLORS.dim}Restriction:${COLORS.reset} "${restriction}"`);
-  console.log(`  ${COLORS.dim}Action:${COLORS.reset} ${policy.action}`);
-  console.log(`  ${COLORS.dim}Patterns:${COLORS.reset} ${policy.include.join(', ')}`);
-  console.log(`\nTo enforce, install for your agent:`);
-  console.log(`  ${COLORS.dim}leash install cc${COLORS.reset}        Claude Code`);
-  console.log(`  ${COLORS.dim}leash install windsurf${COLORS.reset}  Windsurf`);
-  console.log(`  ${COLORS.dim}leash install oc${COLORS.reset}        OpenCode\n`);
+  if (failed.length > 0) {
+    console.log(`\n${COLORS.error}${SYMBOLS.error} ${failed.length} failed:${COLORS.reset}`);
+    for (const { restriction, error } of failed) {
+      console.log(`  ${COLORS.error}-${COLORS.reset} "${restriction}": ${error}`);
+    }
+  }
+
+  if (successful.length > 0) {
+    console.log(`\nTo enforce, install for your agent:`);
+    console.log(`  ${COLORS.dim}leash install cc${COLORS.reset}        Claude Code`);
+    console.log(`  ${COLORS.dim}leash install windsurf${COLORS.reset}  Windsurf`);
+    console.log(`  ${COLORS.dim}leash install oc${COLORS.reset}        OpenCode\n`);
+  }
 }
 
 function runList() {

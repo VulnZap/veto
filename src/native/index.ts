@@ -243,8 +243,8 @@ export function detectInstalledAgents(): AgentInfo[] {
     if (agent) detected.push(agent);
   }
 
-  // OpenCode: ~/.opencode/
-  if (existsSync(join(home, '.opencode'))) {
+  // OpenCode: ~/.config/opencode/
+  if (existsSync(join(home, '.config', 'opencode'))) {
     const agent = AGENTS.find(a => a.id === 'opencode');
     if (agent) detected.push(agent);
   }
