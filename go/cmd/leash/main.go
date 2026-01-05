@@ -22,21 +22,21 @@ import (
 	"github.com/vulnzap/leash/internal/engine"
 )
 
-const version = "2.1.0"
+const version = "2.1.2"
 
 // ══════════════════════════════════════════════════════════════════════════════
 // VETO BRANDING
 // ══════════════════════════════════════════════════════════════════════════════
 
 const logo = `
- ██╗   ██╗███████╗████████╗ ██████╗ 
- ██║   ██║██╔════╝╚══██╔══╝██╔═══██╗
- ██║   ██║█████╗     ██║   ██║   ██║
- ╚██╗ ██╔╝██╔══╝     ██║   ██║   ██║
-  ╚████╔╝ ███████╗   ██║   ╚██████╔╝
-   ╚═══╝  ╚══════╝   ╚═╝    ╚═════╝ `
+    @@     @@    @@@@@@@       @@       @@@@@@@     
+    @@     @@   @@     @@      @@      @@     @@    
+     @@   @@    @@@@@@@@@  @@@@@@@@@@  @@     @@    
+      @@ @@     @@             @@      @@     @@    
+      @@ @@     @@             @@      @@     @@    
+       @@@       @@@@@@@   @@@@@@@@@@   @@@@@@@     `
 
-const logoCompact = `█▀▀█ VETO`
+const logoCompact = `@@ VETO`
 
 // Brand colors
 var (
@@ -103,16 +103,16 @@ var (
 	keyDescStyle = lipgloss.NewStyle().
 			Foreground(textSecond)
 
-	// Panels
+	// Panels - blocky tactile design
 	panelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.ThickBorder()).
 			BorderForeground(borderColor).
-			Padding(1, 2)
+			Padding(0, 2)
 
 	panelActiveStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
+				Border(lipgloss.ThickBorder()).
 				BorderForeground(orange).
-				Padding(1, 2)
+				Padding(0, 2)
 
 	panelHeaderStyle = lipgloss.NewStyle().
 				Foreground(textColor).
@@ -326,6 +326,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.navigateDown()
 		case "k", "up":
 			m.navigateUp()
+		case "right":
+			// Switch panels right (policies -> agents, or toggle dashboard selection)
+			if m.view == viewDashboard {
+				m.selectedIndex = (m.selectedIndex + 1) % 2
+			} else if m.view == viewPolicies {
+				m.view = viewAgents
+				m.selectedIndex = 0
+			}
+		case "left":
+			// Switch panels left (agents -> policies, or toggle dashboard selection)
+			if m.view == viewDashboard {
+				m.selectedIndex = (m.selectedIndex + 1) % 2
+			} else if m.view == viewAgents {
+				m.view = viewPolicies
+				m.selectedIndex = 0
+			}
 
 		// Actions
 		case "a":
@@ -561,11 +577,10 @@ func (m model) renderHeader() string {
 	header := lipgloss.JoinVertical(
 		lipgloss.Center,
 		strings.Repeat(" ", padLeft)+logoView,
-		"",
 		lipgloss.PlaceHorizontal(m.width, lipgloss.Center, versionStr),
 	)
 
-	return header + "\n"
+	return header
 }
 
 func (m model) renderContent() string {
@@ -702,7 +717,7 @@ func (m model) renderPolicies() string {
 		rows = append(rows, prefix+style.Render(p)+suffix)
 	}
 
-	help := mutedStyle.Render("↑↓ navigate • a add • d delete • esc back")
+	help := mutedStyle.Render("↑↓ navigate • ←→ switch • a add • d delete • esc back")
 
 	return panelActiveStyle.Width(width).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
@@ -748,7 +763,7 @@ func (m model) renderAgents() string {
 		rows = append(rows, prefix+style.Render(a.Name)+" "+status)
 	}
 
-	help := mutedStyle.Render("↑↓ navigate • enter sync • esc back")
+	help := mutedStyle.Render("↑↓ navigate • ←→ switch • enter sync • esc back")
 
 	return panelActiveStyle.Width(width).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
@@ -800,19 +815,20 @@ func (m model) renderHelp() string {
 
 	help := `
   ` + orangeStyle.Render("NAVIGATION") + `
-  ` + keyStyle.Render("↑/k") + `  ` + keyDescStyle.Render("Move up") + `
-  ` + keyStyle.Render("↓/j") + `  ` + keyDescStyle.Render("Move down") + `
-  ` + keyStyle.Render("tab") + `  ` + keyDescStyle.Render("Switch panels") + `
-  ` + keyStyle.Render("esc") + `  ` + keyDescStyle.Render("Back / Dashboard") + `
-  ` + keyStyle.Render("?") + `    ` + keyDescStyle.Render("Toggle help") + `
+  ` + keyStyle.Render("↑/k") + `    ` + keyDescStyle.Render("Move up") + `
+  ` + keyStyle.Render("↓/j") + `    ` + keyDescStyle.Render("Move down") + `
+  ` + keyStyle.Render("←/→") + `    ` + keyDescStyle.Render("Switch panels") + `
+  ` + keyStyle.Render("tab") + `    ` + keyDescStyle.Render("Switch panels") + `
+  ` + keyStyle.Render("esc") + `    ` + keyDescStyle.Render("Back / Dashboard") + `
+  ` + keyStyle.Render("?") + `      ` + keyDescStyle.Render("Toggle help") + `
 
   ` + orangeStyle.Render("ACTIONS") + `
-  ` + keyStyle.Render("a") + `    ` + keyDescStyle.Render("Add policy") + `
-  ` + keyStyle.Render("d/x") + `  ` + keyDescStyle.Render("Delete selected") + `
-  ` + keyStyle.Render("i") + `    ` + keyDescStyle.Render("Initialize .leash") + `
-  ` + keyStyle.Render("s") + `    ` + keyDescStyle.Render("Sync to all agents") + `
-  ` + keyStyle.Render("r") + `    ` + keyDescStyle.Render("Refresh") + `
-  ` + keyStyle.Render("q") + `    ` + keyDescStyle.Render("Quit") + `
+  ` + keyStyle.Render("a") + `      ` + keyDescStyle.Render("Add policy") + `
+  ` + keyStyle.Render("d/x") + `    ` + keyDescStyle.Render("Delete selected") + `
+  ` + keyStyle.Render("i") + `      ` + keyDescStyle.Render("Initialize .leash") + `
+  ` + keyStyle.Render("s") + `      ` + keyDescStyle.Render("Sync to all agents") + `
+  ` + keyStyle.Render("r") + `      ` + keyDescStyle.Render("Refresh") + `
+  ` + keyStyle.Render("q") + `      ` + keyDescStyle.Render("Quit") + `
 
   ` + orangeStyle.Render("CLI") + `
   ` + dimStyle.Render("leash add \"policy\"") + `
