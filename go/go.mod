@@ -10,7 +10,6 @@ require (
 	github.com/charmbracelet/huh v0.8.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gobwas/glob v0.2.3
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

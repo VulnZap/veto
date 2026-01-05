@@ -2,18 +2,18 @@
 package config
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
-
-	"gopkg.in/yaml.v3"
+	"strings"
 )
 
 // LeashConfig represents a .leash configuration file.
 type LeashConfig struct {
 	// Policies is a list of policy restrictions
-	Policies []string `yaml:"policies"`
+	Policies []string
 	// Agents to apply policies to (optional, defaults to all detected)
-	Agents []string `yaml:"agents,omitempty"`
+	Agents []string
 }
 
 // DefaultPolicies are the universal defaults for new .leash files.
@@ -47,60 +47,73 @@ func Find() (string, error) {
 	return "", os.ErrNotExist
 }
 
-// Exists checks if a .leash file exists in the current directory.
+// Exists checks if a .leash file exists in the current directory or parents.
 func Exists() bool {
-	cwd, _ := os.Getwd()
-	_, err := os.Stat(filepath.Join(cwd, ".leash"))
+	_, err := Find()
 	return err == nil
 }
 
 // Load reads and parses a .leash file.
+// Format: one policy per line, # for comments
 func Load(path string) (*LeashConfig, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 
-	var config LeashConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	var policies []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Extract policy (before optional " - " reason)
+		if idx := strings.Index(line, " - "); idx != -1 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		if line != "" {
+			policies = append(policies, line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 
-	return &config, nil
+	return &LeashConfig{Policies: policies}, nil
 }
 
 // Create creates a new .leash file with default policies.
 func Create() error {
-	config := LeashConfig{
-		Policies: DefaultPolicies,
-	}
-
-	data, err := yaml.Marshal(&config)
-	if err != nil {
-		return err
-	}
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(cwd, ".leash"), data, 0644)
+	content := "# .leash - policies for AI agents\n"
+	for _, p := range DefaultPolicies {
+		content += p + "\n"
+	}
+
+	return os.WriteFile(filepath.Join(cwd, ".leash"), []byte(content), 0644)
 }
 
 // Save writes a config to the .leash file.
 func Save(config *LeashConfig) error {
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return err
-	}
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(cwd, ".leash"), data, 0644)
+	content := "# .leash - policies for AI agents\n"
+	for _, p := range config.Policies {
+		content += p + "\n"
+	}
+
+	return os.WriteFile(filepath.Join(cwd, ".leash"), []byte(content), 0644)
 }
 
 // AddPolicy adds a policy to the config and saves it.
