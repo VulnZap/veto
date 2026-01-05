@@ -215,6 +215,7 @@ export async function installOpenCodePermissions(
 
 /**
  * Generate plugin source for npm installs where src directory isn't available
+ * This is the full plugin with command, file path, and content checking
  */
 function generatePluginSource(): string {
   return `/**
@@ -241,7 +242,9 @@ function matchGlob(text, pattern) {
   const normalized = text.toLowerCase()
   const pat = pattern.toLowerCase()
   if (pat === "*") return true
-  if (!pat.includes("*")) return normalized === pat || normalized.startsWith(pat + " ")
+  if (!pat.includes("*") && !pat.includes("?")) {
+    return normalized === pat || normalized.startsWith(pat + " ")
+  }
   const regex = new RegExp("^" + pat.replace(/\\*/g, ".*").replace(/\\?/g, ".") + "$")
   return regex.test(normalized)
 }
@@ -260,6 +263,53 @@ function checkCommand(command, policies) {
   return { blocked: false }
 }
 
+function checkFilePath(filePath, policies, action) {
+  const normalizedPath = filePath.replace(/\\\\/g, "/")
+  const basename = normalizedPath.split("/").pop() || ""
+  
+  for (const policy of policies) {
+    const policyAction = policy.action
+    if (action === "edit" && policyAction !== "modify") continue
+    if (action === "read" && policyAction !== "read") continue
+    
+    const matchesInclude = policy.include.some(p => matchGlob(normalizedPath, p) || matchGlob(basename, p))
+    if (!matchesInclude) continue
+    
+    const matchesExclude = policy.exclude.some(p => matchGlob(normalizedPath, p) || matchGlob(basename, p))
+    if (matchesExclude) continue
+    
+    return { blocked: true, reason: policy.description + ": " + filePath }
+  }
+  return { blocked: false }
+}
+
+function checkContent(content, filePath, policies) {
+  const basename = filePath.split("/").pop() || ""
+  
+  for (const policy of policies) {
+    if (!policy.contentRules) continue
+    
+    for (const rule of policy.contentRules) {
+      const matchesType = rule.fileTypes.some(ft => {
+        if (ft.startsWith("*.")) return basename.endsWith(ft.slice(1))
+        return matchGlob(basename, ft)
+      })
+      if (!matchesType) continue
+      
+      try {
+        const regex = new RegExp(rule.pattern, "gm")
+        const match = regex.exec(content)
+        if (match) {
+          const beforeMatch = content.slice(0, match.index)
+          const line = (beforeMatch.match(/\\n/g) || []).length + 1
+          return { blocked: true, reason: rule.reason, suggest: rule.suggest, line }
+        }
+      } catch {}
+    }
+  }
+  return { blocked: false }
+}
+
 export const VetoLeash = async ({ client }) => {
   const policies = loadPolicies()
   if (policies.length === 0) return {}
@@ -268,11 +318,38 @@ export const VetoLeash = async ({ client }) => {
   
   return {
     "tool.execute.before": async (input, output) => {
-      if (input.tool === "bash" && output.args.command) {
-        const result = checkCommand(String(output.args.command), policies)
+      const tool = input.tool
+      const args = output.args
+      
+      // Check Bash commands
+      if (tool === "bash" && args.command) {
+        const result = checkCommand(String(args.command), policies)
         if (result.blocked) {
           await client.tui.showToast({ message: \`Blocked: \${result.reason}\`, variant: "error" })
           throw new Error(\`veto-leash: \${result.reason}\${result.suggest ? ". Try: " + result.suggest : ""}\`)
+        }
+      }
+      
+      // Check file paths
+      if ((tool === "edit" || tool === "write" || tool === "read") && args.filePath) {
+        const action = tool === "read" ? "read" : "edit"
+        const result = checkFilePath(String(args.filePath), policies, action)
+        if (result.blocked) {
+          await client.tui.showToast({ message: \`Blocked: \${result.reason}\`, variant: "error" })
+          throw new Error(\`veto-leash: \${result.reason}\`)
+        }
+      }
+      
+      // Check content
+      if ((tool === "edit" || tool === "write") && args.filePath) {
+        const content = String(args.content || args.newString || "")
+        if (content) {
+          const result = checkContent(content, String(args.filePath), policies)
+          if (result.blocked) {
+            const lineInfo = result.line ? \` (line \${result.line})\` : ""
+            await client.tui.showToast({ message: \`Blocked\${lineInfo}: \${result.reason}\`, variant: "error" })
+            throw new Error(\`veto-leash: \${result.reason}\${lineInfo}\${result.suggest ? ". Try: " + result.suggest : ""}\`)
+          }
         }
       }
     },
