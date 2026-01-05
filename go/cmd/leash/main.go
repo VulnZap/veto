@@ -98,11 +98,25 @@ func initialModel() model {
 		}
 	}
 
+	// Create policy list items
+	items := make([]list.Item, len(policies))
+	for i, p := range policies {
+		items[i] = policyItem(p)
+	}
+
+	// Initialize list with delegate
+	delegate := list.NewDefaultDelegate()
+	policyList := list.New(items, delegate, 80, 20)
+	policyList.Title = "Policies"
+	policyList.SetShowHelp(false)
+	policyList.SetFilteringEnabled(false)
+
 	return model{
-		view:      viewHome,
-		textInput: ti,
-		spinner:   sp,
-		policies:  policies,
+		view:       viewHome,
+		textInput:  ti,
+		spinner:    sp,
+		policies:   policies,
+		policyList: policyList,
 	}
 }
 
