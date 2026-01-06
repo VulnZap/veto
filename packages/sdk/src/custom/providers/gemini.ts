@@ -10,20 +10,6 @@ import type { ProviderMessages } from '../prompt.js';
 import { CustomError } from '../types.js';
 
 /**
- * Schema for Veto validation response.
- */
-const RESPONSE_SCHEMA = {
-  type: 'object',
-  properties: {
-    pass_weight: { type: 'number', description: 'Weight for pass decision (0-1)' },
-    block_weight: { type: 'number', description: 'Weight for block decision (0-1)' },
-    decision: { type: 'string', enum: ['pass', 'block'], description: 'The validation decision' },
-    reasoning: { type: 'string', description: 'Brief explanation of the decision' },
-  },
-  required: ['pass_weight', 'block_weight', 'decision', 'reasoning'],
-};
-
-/**
  * Call Google Gemini API with the given prompt.
  */
 export async function callGemini(
@@ -32,8 +18,7 @@ export async function callGemini(
   logger: Logger
 ): Promise<string> {
   try {
-    // @ts-expect-error - Optional peer dependency
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    const { GoogleGenerativeAI, SchemaType } = await import('@google/generative-ai');
     const ai = new GoogleGenerativeAI(config.apiKey);
 
     const textContent = messages.contents?.[0]?.parts?.[0]?.text ?? '';
@@ -50,14 +35,23 @@ export async function callGemini(
         temperature: config.temperature,
         maxOutputTokens: config.maxTokens,
         responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
+        responseSchema: {
+          type: SchemaType.OBJECT,
+          properties: {
+            pass_weight: { type: SchemaType.NUMBER, description: 'Weight for pass decision (0-1)' },
+            block_weight: { type: SchemaType.NUMBER, description: 'Weight for block decision (0-1)' },
+            decision: { type: SchemaType.STRING, enum: ['pass', 'block'], description: 'The validation decision' },
+            reasoning: { type: SchemaType.STRING, description: 'Brief explanation of the decision' },
+          },
+          required: ['pass_weight', 'block_weight', 'decision', 'reasoning'],
+        },
       },
     });
 
     const result = await model.generateContent(textContent);
     const response = result.response;
 
-    const text = response.text;
+    const text = response.text();
     if (!text) {
       throw new CustomError('Empty response from Gemini');
     }
