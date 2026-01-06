@@ -9,22 +9,21 @@ import type { ResolvedCustomConfig } from '../types.js';
 import type { ProviderMessages } from '../prompt.js';
 import { CustomError } from '../types.js';
 
-let OpenAIClass: typeof import('openai').default | null = null;
-
-async function getOpenAIClass(): Promise<typeof import('openai').default> {
-  if (!OpenAIClass) {
-    OpenAIClass = (await import('openai')).default;
-  }
-  return OpenAIClass;
-}
-
+/**
+ * Call OpenAI API with the given prompt.
+ *
+ * @param messages - Provider-specific message structure
+ * @param config - Resolved custom configuration
+ * @param logger - Logger instance
+ * @returns Raw text response from OpenAI
+ */
 export async function callOpenAI(
   messages: ProviderMessages,
   config: ResolvedCustomConfig,
   logger: Logger
 ): Promise<string> {
   try {
-    const OpenAI = await getOpenAIClass();
+    const OpenAI = (await import('openai')).default;
     const client = new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
@@ -38,10 +37,10 @@ export async function callOpenAI(
 
     const response = await client.chat.completions.create({
       model: config.model,
-      messages: messages.messages! as Parameters<typeof client.chat.completions.create>[0]['messages'],
+      messages: messages.messages! as any,
       temperature: config.temperature,
       max_tokens: config.maxTokens,
-      response_format: { type: 'json_object' },
+      response_format: { type: 'json_object' }, // Force JSON output
     });
 
     const content = response.choices[0]?.message?.content;

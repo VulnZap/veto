@@ -1,0 +1,82 @@
+version: "1.0"
+name: payroll-rules
+description: Rules for automated payroll processing guardrails
+
+rules:
+  # Block excessive salary payments
+  - id: block-large-salary
+    name: Block large salary payments
+    description: Salary payments over $15,000 require manual approval
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - process_payroll
+    conditions:
+      - field: arguments.paymentType
+        operator: equals
+        value: "salary"
+      - field: arguments.amount
+        operator: greater_than
+        value: 15000
+
+  # Block large bonuses without approval
+  - id: block-unapproved-bonus
+    name: Block unapproved large bonuses
+    description: Bonuses over $5,000 require manager approval
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - approve_bonus
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 5000
+      - field: arguments.managerApproval
+        operator: equals
+        value: false
+
+  # Block payments to terminated employees
+  - id: block-terminated-payment
+    name: Block terminated employee payments
+    description: Cannot process payments for terminated employees
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - process_payroll
+      - approve_bonus
+    conditions:
+      - field: context.employeeStatus
+        operator: equals
+        value: "terminated"
+
+  # Allow normal salary payments
+  - id: allow-normal-salary
+    name: Allow normal salary payments
+    description: Salary payments within limits are allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - process_payroll
+    conditions:
+      - field: arguments.paymentType
+        operator: equals
+        value: "salary"
+      - field: arguments.amount
+        operator: less_than_or_equal
+        value: 15000
+
+  # Allow employee status checks
+  - id: allow-employee-lookup
+    name: Allow employee lookups
+    description: Employee status checks are always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - check_employee_status
+      - get_payroll_schedule
+      - get_payroll_history

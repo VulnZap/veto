@@ -1,0 +1,82 @@
+version: "1.0"
+name: treasury-rules
+description: Rules for treasury management guardrails
+
+rules:
+  # Block large transfers without CFO approval
+  - id: block-large-transfer
+    name: Block large transfers
+    description: Transfers over $100,000 require CFO approval
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - transfer_funds
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 100000
+      - field: arguments.cfoApproval
+        operator: equals
+        value: false
+
+  # Block access to reserve accounts
+  - id: block-reserve-access
+    name: Block reserve account access
+    description: Reserve accounts require special authorization
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - transfer_funds
+      - withdraw_funds
+    conditions:
+      - field: arguments.accountType
+        operator: equals
+        value: "reserve"
+
+  # Block international transfers without compliance check
+  - id: block-international
+    name: Block unchecked international transfers
+    description: International transfers require compliance review
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - transfer_funds
+    conditions:
+      - field: arguments.international
+        operator: equals
+        value: true
+      - field: arguments.complianceChecked
+        operator: equals
+        value: false
+
+  # Allow balance checks
+  - id: allow-balance
+    name: Allow balance checks
+    description: Viewing balances is always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - get_account_balance
+      - get_cash_position
+      - get_transaction_history
+
+  # Allow small transfers
+  - id: allow-small-transfer
+    name: Allow small transfers
+    description: Routine transfers under $100,000 are allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - transfer_funds
+    conditions:
+      - field: arguments.amount
+        operator: less_than_or_equal
+        value: 100000
+      - field: arguments.accountType
+        operator: not_equals
+        value: "reserve"

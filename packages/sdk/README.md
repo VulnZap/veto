@@ -4,107 +4,76 @@ A guardrail system for AI agent tool calls. Veto intercepts and validates tool c
 
 ## How It Works
 
-1. Define your tools with handlers
-2. Wrap them with Veto to get `definitions` and `implementations`
-3. Pass `definitions` to the AI model
-4. Execute tool calls using `implementations` - validation happens automatically
+1. **Initialize** Veto.
+2. **Wrap** your tools using `veto.wrap()`.
+3. **Pass** the wrapped tools to your AI agent/model.
 
-When a tool is executed, Veto:
-1. Looks up applicable rules from your YAML configuration
-2. Sends the call context and rules to your validation API
-3. Blocks or allows the call based on the API response
+When the AI model calls a tool, Veto automatically:
+1. Intercepts the call.
+2. Validates arguments against your rules (via YAML & LLM).
+3. Blocks or Allows execution based on the result.
 
-The AI model remains unaware of the guardrail - tool schemas are unchanged.
+The AI model remains unaware of the guardrail - the tool interface is preserved.
 
 ## Installation
 
 ```bash
-npm install veto-sdk
+npm install veto
 ```
 
 ## Quick Start
 
-### 1. Initialize Veto in your project
+### 1. Initialize Veto
 
-```typescript
-import { init } from 'veto-sdk';
-await init();
+Run the CLI to create configuration:
+```bash
+npx veto init
 ```
+This creates a `veto/` directory with `veto.config.yaml` and default rules.
 
-Or via CLI: `npm install -g veto-cli && veto init`
+### 2. Wrap Your Tools
 
-This creates a `veto/` directory with configuration and default rules.
-
-### 2. Define your tools and wrap them
+Veto's `wrap()` method is provider-agnostic. It works with LangChain, Vercel AI SDK, or any custom tool object.
 
 ```typescript
-import { Veto, ToolCallDeniedError } from 'veto-sdk';
+import { Veto } from 'veto';
+import { tool } from '@langchain/core/tools'; // Example with LangChain
 
-// Define tools with handlers
-const tools = [
-  {
-    name: 'read_file',
-    description: 'Read a file',
-    inputSchema: {
-      type: 'object',
-      properties: { path: { type: 'string' } },
-      required: ['path']
-    },
-    handler: async (args) => {
-      return fs.readFileSync(args.path, 'utf-8');
-    }
-  },
-  {
-    name: 'write_file',
-    description: 'Write a file',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        path: { type: 'string' },
-        content: { type: 'string' }
-      },
-      required: ['path', 'content']
-    },
-    handler: async (args) => {
-      fs.writeFileSync(args.path, args.content);
-      return 'OK';
-    }
-  }
+// 1. Define your tools normally
+const myTools = [
+  tool(async (args) => { ... }, { name: 'my_tool', ... }),
+  // ...
 ];
 
-// Initialize Veto and wrap tools
+// 2. Initialize Veto
 const veto = await Veto.init();
-const { definitions, implementations } = veto.wrapTools(tools);
 
-// Use implementations - validation happens automatically
-try {
-  const content = await implementations.read_file({ path: '/home/user/file.txt' });
-  console.log(content);
-} catch (error) {
-  if (error instanceof ToolCallDeniedError) {
-    console.log('Blocked:', error.reason);
-  }
-}
+// 3. Wrap tools (Validation logic is injected)
+// Types are preserved: wrappedTools has same type as myTools
+const wrappedTools = veto.wrap(myTools);
+
+// 4. Pass to your Agent/LLM
+const agent = createAgent({
+  tools: wrappedTools,
+  // ...
+});
 ```
 
-### 3. Configure rules
+### 3. Configure Rules
 
-Edit `veto/rules/defaults.yaml`:
+Edit `veto/rules/financial.yaml` (example):
 
 ```yaml
 rules:
-  - id: block-system-paths
-    name: Block system path access
-    enabled: true
-    severity: critical
+  - id: limit-transfers
+    name: Limit large transfers
     action: block
     tools:
-      - read_file
-      - write_file
+      - transfer_funds
     conditions:
-      - field: arguments.path
-        operator: starts_with
-        value: /etc
+      - field: arguments.amount
+        operator: greater_than
+        value: 1000
 ```
 
 ## Configuration
@@ -117,26 +86,18 @@ version: "1.0"
 # Operating mode
 mode: "strict"  # "strict" blocks calls, "log" only logs them
 
-# Validation mode: "api", "kernel", or "custom"
+# Validation Backend
 validation:
-  mode: "custom"
+  mode: "custom" # "api", "kernel", or "custom"
 
-# Custom LLM provider (when validation.mode is "custom")
+# Custom Provider (if mode is custom)
 custom:
-  provider: "openai"  # openai, anthropic, gemini, openrouter
-  model: "gpt-4o"
-  # apiKey: "sk-..."  # Or set OPENAI_API_KEY env var
-
-# Validation API (when validation.mode is "api")
-api:
-  baseUrl: "http://localhost:8080"
-  endpoint: "/tool/call/check"
-  timeout: 10000
-  retries: 2
+  provider: "gemini" # or openai, anthropic
+  model: "gemini-3-flash-preview"
 
 # Logging
 logging:
-  level: "info"  # debug, info, warn, error, silent
+  level: "info"
 
 # Rules
 rules:
@@ -144,310 +105,99 @@ rules:
   recursive: true
 ```
 
-### Validation Modes
-
-| Mode | Description |
-|------|-------------|
-| `api` | Validate via external HTTP API (default) |
-| `kernel` | Validate via local Ollama model |
-| `custom` | Validate via custom LLM provider (OpenAI, Anthropic, Gemini, OpenRouter) |
-
-### Custom LLM Providers
-
-Use your own LLM for validation instead of an external API:
-
-```yaml
-validation:
-  mode: "custom"
-
-custom:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-```
-
-| Provider | Environment Variable | Example Models |
-|----------|---------------------|----------------|
-| `openai` | `OPENAI_API_KEY` | gpt-4o, gpt-4-turbo |
-| `anthropic` | `ANTHROPIC_API_KEY` | claude-sonnet-4-20250514, claude-opus-4-20250514 |
-| `gemini` | `GEMINI_API_KEY` | gemini-2.0-flash, gemini-1.5-pro |
-| `openrouter` | `OPENROUTER_API_KEY` | Any model on OpenRouter |
-
-### Operating Modes
-
-| Mode | Behavior |
-|------|----------|
-| `strict` | Blocks tool calls when the validation API returns a block decision |
-| `log` | Logs block decisions but allows all tool calls to proceed |
-
-Override mode programmatically:
-
-```typescript
-const veto = await Veto.init({ mode: 'log' });
-```
-
-## Validation API
-
-Veto sends a POST request to your validation API with the tool call context and applicable rules.
-
-### Request
-
-```
-POST /tool/call/check
-Content-Type: application/json
-```
-
-```json
-{
-  "context": {
-    "call_id": "call_abc123",
-    "tool_name": "read_file",
-    "arguments": { "path": "/etc/passwd" },
-    "timestamp": "2024-01-15T10:30:00Z",
-    "call_history": []
-  },
-  "rules": [
-    {
-      "id": "block-system-paths",
-      "name": "Block system path access",
-      "severity": "critical",
-      "conditions": [
-        {
-          "field": "arguments.path",
-          "operator": "starts_with",
-          "value": "/etc"
-        }
-      ]
-    }
-  ]
-}
-```
-
-### Response
-
-```json
-{
-  "should_pass_weight": 0.1,
-  "should_block_weight": 0.9,
-  "decision": "block",
-  "reasoning": "Access to /etc is blocked by security policy"
-}
-```
-
-The `decision` field must be either `"pass"` or `"block"`.
-
-## Rule Format
-
-```yaml
-rules:
-  - id: unique-rule-id
-    name: Human readable name
-    description: What this rule does
-    enabled: true
-    severity: critical    # critical, high, medium, low, info
-    action: block         # block, warn, log, allow
-    tools:                # tools this applies to (empty = all tools)
-      - read_file
-      - write_file
-    conditions:           # all conditions must match
-      - field: arguments.path
-        operator: starts_with
-        value: /etc
-```
-
-### Condition Operators
-
-| Operator | Description |
-|----------|-------------|
-| `equals` | Exact match |
-| `not_equals` | Not equal |
-| `contains` | String contains substring |
-| `not_contains` | String does not contain substring |
-| `starts_with` | String starts with prefix |
-| `ends_with` | String ends with suffix |
-| `matches` | Regex pattern match |
-| `greater_than` | Numeric greater than |
-| `less_than` | Numeric less than |
-| `in` | Value in list |
-| `not_in` | Value not in list |
-
-## Provider Integration
-
-### OpenAI
-
-```typescript
-import { Veto, toOpenAITools, fromOpenAIToolCall } from 'veto-sdk';
-
-const veto = await Veto.init();
-const { definitions, implementations } = veto.wrapTools(myTools);
-
-// Pass definitions to OpenAI
-const response = await openai.chat.completions.create({
-  model: 'gpt-5.2',
-  tools: toOpenAITools(definitions),
-  messages: [...]
-});
-
-// Execute tool calls using implementations
-for (const call of response.choices[0].message.tool_calls ?? []) {
-  const args = JSON.parse(call.function.arguments);
-  try {
-    const result = await implementations[call.function.name](args);
-    console.log('Result:', result);
-  } catch (error) {
-    if (error instanceof ToolCallDeniedError) {
-      console.log('Blocked:', error.reason);
-    }
-  }
-}
-```
-
-### Anthropic
-
-```typescript
-import { Veto, toAnthropicTools, fromAnthropicToolUse } from 'veto-sdk';
-
-const veto = await Veto.init();
-const { definitions, implementations } = veto.wrapTools(myTools);
-
-// Pass definitions to Anthropic
-const response = await anthropic.messages.create({
-  model: 'claude-opus-4.5',
-  tools: toAnthropicTools(definitions),
-  messages: [...]
-});
-
-// Execute tool calls using implementations
-for (const block of response.content) {
-  if (block.type === 'tool_use') {
-    try {
-      const result = await implementations[block.name](block.input);
-      console.log('Result:', result);
-    } catch (error) {
-      if (error instanceof ToolCallDeniedError) {
-        console.log('Blocked:', error.reason);
-      }
-    }
-  }
-}
-```
-
 ## API Reference
 
-### Veto.init(options?)
+### `Veto.init(options?)`
 
-Initialize Veto by loading configuration and rules.
+Initialize Veto. Loads configuration from `./veto` by default.
 
 ```typescript
 const veto = await Veto.init();
-
-// With options
-const veto = await Veto.init({
-  configDir: './my-veto-config',
-  mode: 'log',
-  logLevel: 'debug'
-});
 ```
 
-### veto.wrapTools(tools)
+### `veto.wrap<T>(tools: T[]): T[]`
 
-Wrap tools and return definitions and implementations.
+Wraps an array of tools. The returned tools have Veto validation injected into their execution handler. Preserves the original tool types for full compatibility with your AI framework.
 
 ```typescript
-const { definitions, implementations } = veto.wrapTools(tools);
-
-// definitions: Tool schemas to pass to AI models (no handlers)
-// implementations: Object with wrapped handler functions keyed by tool name
+const wrappedForLangChain = veto.wrap(langChainTools);
+const wrappedForVercel = veto.wrap(vercelTools);
 ```
 
-### veto.wrap(tools)
+### `veto.wrapTool<T>(tool: T): T`
 
-Wrap tools with validation while preserving their original type. Works with LangChain, Vercel AI SDK, or any framework.
-
-```typescript
-import { tool } from '@langchain/core/tools';
-import { z } from 'zod';
-
-const tools = [
-  tool(({ query }) => searchDatabase(query), {
-    name: 'search',
-    description: 'Search the database',
-    schema: z.object({ query: z.string() }),
-  }),
-];
-
-const veto = await Veto.init();
-const wrappedTools = veto.wrap(tools); // Same type as input!
-
-// Use with any framework
-const agent = createAgent({ tools: wrappedTools });
-```
-
-### veto.wrapTool(tool)
-
-Wrap a single tool with validation.
+Wraps a single tool instance.
 
 ```typescript
 const safeTool = veto.wrapTool(myTool);
 ```
 
-### veto.validateToolCall(call)
+### `veto.getHistoryStats()`
 
-Manually validate a tool call (for custom execution flows).
-
-```typescript
-const result = await veto.validateToolCall({
-  id: 'call_123',
-  name: 'read_file',
-  arguments: { path: '/some/path' }
-});
-
-if (result.allowed) {
-  // Execute
-}
-```
-
-### veto.getMode()
-
-Get current operating mode.
+Returns statistics about allowed vs blocked calls.
 
 ```typescript
-const mode = veto.getMode(); // 'strict' or 'log'
+const stats = veto.getHistoryStats();
+console.log(stats);
+// { totalCalls: 5, allowedCalls: 4, deniedCalls: 1, ... }
 ```
 
-### veto.getLoadedRules()
+### `veto.clearHistory()`
 
-Get all loaded rules.
+Resets the history statistics.
 
 ```typescript
-const rules = veto.getLoadedRules();
+veto.clearHistory();
 ```
 
-## Initialization
+## CLI Commands
 
-### Programmatic (SDK)
+| Command | Description |
+|---------|-------------|
+| `npx veto init` | Initialize Veto in current directory |
+| `npx veto version` | Show version |
 
-```typescript
-import { init } from 'veto-sdk';
+## General Rule YAML Format
 
-await init({ directory: './my-project' });
+Each rule file (e.g., `veto/rules/policy.yaml`) can contain one or more rules.
+
+```yaml
+rules:
+  - id: unique-rule-id           # [Required] Unique identifier for the rule
+    name: Human readable name    # [Required] Descriptive name for logging
+    enabled: true                # [Optional] Default: true
+    severity: high               # [Optional] critical, high, medium, low, info. Default: medium
+    action: block                # [Required] block, warn, log, allow.
+    
+    # Scope: Which tools does this rule apply to?
+    tools:                       # [Optional] List of tool names.
+      - make_payment             # If omitted or empty, applies to ALL tools (Global Rule).
+      
+    # Static Conditions (Optional):
+    # Evaluated locally before LLM validation. Fast checks for specific values.
+    conditions:
+      - field: arguments.amount  # Dot notation for nested arguments
+        operator: greater_than   # equals, contains, starts_with, ends_with, greater_than, less_than
+        value: 1000
+
+    # description (Optional):
+    # Natural language guidance for the validation LLM.
+    description: "Ensure the payment recipient is a verified vendor."
 ```
 
-### CLI (via veto-cli)
+## Rule Matching Logic
 
-Install the CLI for command-line initialization:
+Veto uses a two-step process to determine if a tool call is safe:
 
-```bash
-npm install -g veto-cli
-veto init
-```
+### 1. Rule Selection (Which rules apply?)
+Veto selects rules based on the `tools` list in your YAML:
+*   **Tool-Specific Rules**: If a rule lists specific tools (e.g., `tools: [make_payment]`), it ONLY applies when those tools are called.
+*   **Global Rules**: If `tools` is missing or empty `[]`, the rule activates for **EVERY** tool call. Use this for universal policies (e.g., "Do not reveal internal file paths").
 
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `VETO_LOG_LEVEL` | Override log level |
-| `VETO_SESSION_ID` | Session ID for tracking |
-| `VETO_AGENT_ID` | Agent ID for tracking |
+### 2. Validation Execution
+For each intercepted tool call, Veto aggregates all applicable rules (Global + Specific) and validates them:
+*   **Static Conditions**: If `conditions` are defined, they are checked first by the Validation Engine. If a condition matches (e.g., `amount > 1000`), the rule triggers immediately.
+*   **Semantic Validation**: If no static conditions are matched (or none exist), the rule's `name` and `description` are passed to the LLM (via API, Kernel, or Custom provider) to semantically verify if the tool call violates the rule context.
 
 ## License
 

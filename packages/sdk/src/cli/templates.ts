@@ -17,13 +17,36 @@ version: "1.0"
 #   "log"    - Only log validation failures, allow calls to proceed
 mode: "strict"
 
-# Validation API endpoint (internal)
+# Validation mode:
+#   "api"    - Use external HTTP API (default)
+#   "kernel" - Use local Ollama model
+#   "custom" - Use specified LLM provider
+validation:
+  mode: "api"
+
+# Validation API endpoint (for mode: "api")
 api:
   baseUrl: "http://localhost:8080"
   endpoint: "/tool/call/check"
   timeout: 10000
   retries: 2
   retryDelay: 1000
+
+# Kernel configuration (for mode: "kernel")
+# kernel:
+#   baseUrl: "http://localhost:11434/v1"
+#   model: "hf.co/ycaleb/veto-warden-4b-GGUF:Q4_K_M"
+#   temperature: 0.1
+#   maxTokens: 256
+
+# Custom LLM provider (for mode: "custom")
+# custom:
+#   provider: "openai"  # openai | anthropic | gemini | openrouter
+#   model: "gpt-4o"
+#   # apiKey: "sk-..."  # Or set OPENAI_API_KEY env var
+#   temperature: 0.1
+#   maxTokens: 500
+#   # baseUrl: "https://api.openai.com/v1"  # Optional override
 
 # Logging
 logging:
@@ -132,4 +155,10 @@ export const ENV_EXAMPLE = `# Veto Environment Variables
 # Session/Agent tracking (optional)
 # VETO_SESSION_ID=
 # VETO_AGENT_ID=
+
+# Custom LLM Provider API Keys (for validation.mode: "custom")
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=sk-ant-...
+# GEMINI_API_KEY=...
+# OPENROUTER_API_KEY=sk-or-...
 `;

@@ -1,0 +1,75 @@
+version: "1.0"
+name: compliance-rules
+description: Rules for regulatory compliance reporting guardrails
+
+rules:
+  # Block PII exports without approval
+  - id: block-pii-export
+    name: Block PII data exports
+    description: Exporting PII data requires explicit authorization
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - export_data
+    conditions:
+      - field: arguments.includesPII
+        operator: equals
+        value: true
+      - field: arguments.piiApproval
+        operator: equals
+        value: false
+
+  # Block exports to external destinations
+  - id: block-external-export
+    name: Block external exports
+    description: Data exports to external systems require approval
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - export_data
+    conditions:
+      - field: arguments.destination
+        operator: equals
+        value: "external"
+
+  # Block access to classified data
+  - id: block-classified
+    name: Block classified data access
+    description: Top-secret data requires special clearance
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - query_data
+    conditions:
+      - field: arguments.classification
+        operator: equals
+        value: "top-secret"
+
+  # Allow internal reports
+  - id: allow-internal
+    name: Allow internal reports
+    description: Internal compliance reports are allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - generate_report
+      - query_data
+    conditions:
+      - field: arguments.destination
+        operator: equals
+        value: "internal"
+
+  # Allow audit queries
+  - id: allow-audit
+    name: Allow audit queries
+    description: Audit trail queries are always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - get_audit_log
+      - list_reports

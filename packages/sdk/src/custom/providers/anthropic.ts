@@ -9,22 +9,22 @@ import type { ResolvedCustomConfig } from '../types.js';
 import type { ProviderMessages } from '../prompt.js';
 import { CustomError } from '../types.js';
 
-let AnthropicClass: typeof import('@anthropic-ai/sdk').default | null = null;
-
-async function getAnthropicClass(): Promise<typeof import('@anthropic-ai/sdk').default> {
-  if (!AnthropicClass) {
-    AnthropicClass = (await import('@anthropic-ai/sdk')).default;
-  }
-  return AnthropicClass;
-}
-
+/**
+ * Call Anthropic API with the given prompt.
+ *
+ * @param messages - Provider-specific message structure
+ * @param config - Resolved custom configuration
+ * @param logger - Logger instance
+ * @returns Raw text response from Anthropic
+ */
 export async function callAnthropic(
   messages: ProviderMessages,
   config: ResolvedCustomConfig,
   logger: Logger
 ): Promise<string> {
   try {
-    const Anthropic = await getAnthropicClass();
+    // @ts-expect-error - Optional peer dependency
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
     const client = new Anthropic({
       apiKey: config.apiKey,
     });
@@ -35,15 +35,10 @@ export async function callAnthropic(
       maxTokens: config.maxTokens,
     });
 
-    const anthropicMessages = messages.messages!.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
-
     const response = await client.messages.create({
       model: config.model,
       system: messages.system,
-      messages: anthropicMessages,
+      messages: messages.messages!,
       temperature: config.temperature,
       max_tokens: config.maxTokens,
     });

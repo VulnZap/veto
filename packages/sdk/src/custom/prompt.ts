@@ -26,6 +26,11 @@ RULES:
 
 /**
  * Provider-specific message structures.
+ *
+ * Different providers have different message formats:
+ * - OpenAI/OpenRouter: [{ role: 'system', content }, { role: 'user', content }]
+ * - Anthropic: system is separate parameter, messages: [{ role: 'user', content }]
+ * - Gemini: contents with parts
  */
 export interface ProviderMessages {
   /** System prompt (for Anthropic) */
@@ -38,6 +43,11 @@ export interface ProviderMessages {
 
 /**
  * Build user prompt from tool call and rules.
+ * Reuses kernel's buildPrompt function for consistency.
+ *
+ * @param toolCall - Tool call to validate
+ * @param rules - Rules to evaluate against
+ * @returns Formatted user prompt
  */
 export function buildUserPrompt(toolCall: CustomToolCall, rules: Rule[]): string {
   return buildPrompt(toolCall, rules);
@@ -45,6 +55,10 @@ export function buildUserPrompt(toolCall: CustomToolCall, rules: Rule[]): string
 
 /**
  * Build provider-specific message structure.
+ *
+ * @param provider - LLM provider type
+ * @param userPrompt - Formatted user prompt
+ * @returns Provider-specific message structure
  */
 export function buildProviderMessages(
   provider: CustomProvider,
@@ -67,6 +81,7 @@ export function buildProviderMessages(
       };
 
     case 'gemini':
+      // Gemini: system prompt prepended to user message
       return {
         contents: [
           {

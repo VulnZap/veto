@@ -1,0 +1,19 @@
+version: "1.0"
+
+mode: "strict"
+
+validation:
+  mode: "custom"
+
+custom:
+  provider: "gemini"
+  model: "gemini-3-flash-preview"
+  temperature: 0.1
+  maxTokens: 3000
+
+logging:
+  level: "info"
+
+rules:
+  directory: "./rules"
+  recursive: true

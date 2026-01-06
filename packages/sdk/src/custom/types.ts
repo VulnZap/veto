@@ -15,7 +15,7 @@ export type CustomProvider = 'gemini' | 'openrouter' | 'openai' | 'anthropic';
 export interface CustomConfig {
   /** LLM provider to use */
   provider: CustomProvider;
-  /** Model identifier (e.g., 'gpt-5.2', 'claude-opus-4.5', 'gemini-3-flash') */
+  /** Model identifier (e.g., 'gpt-4o', 'claude-3-5-sonnet-20241022') */
   model: string;
   /** API key for authentication (or env var name) */
   apiKey?: string;
@@ -76,8 +76,8 @@ export const PROVIDER_ENV_VARS: Record<CustomProvider, string> = {
  */
 export const PROVIDER_BASE_URLS: Record<CustomProvider, string | undefined> = {
   openai: 'https://api.openai.com/v1',
-  anthropic: undefined,
-  gemini: undefined,
+  anthropic: undefined, // Uses SDK default
+  gemini: undefined, // Uses SDK default
   openrouter: 'https://openrouter.ai/api/v1',
 };
 
@@ -133,8 +133,13 @@ export class CustomAPIKeyError extends CustomError {
 
 /**
  * Resolve custom configuration with defaults and validation.
+ *
+ * @param config - User-provided configuration
+ * @returns Resolved configuration with all required fields
+ * @throws {CustomAPIKeyError} If API key is not found
  */
 export function resolveCustomConfig(config: CustomConfig): ResolvedCustomConfig {
+  // Resolve API key: use provided key or environment variable
   const envVar = PROVIDER_ENV_VARS[config.provider];
   const apiKey = config.apiKey || process.env[envVar];
 

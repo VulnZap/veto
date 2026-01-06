@@ -3,15 +3,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "veto-sdk"
+name = "veto"
 version = "0.1.0"
-description = "A guardrail system for AI agent tool calls - Python SDK"
+description = "A guardrail system that intercepts and validates AI agent tool calls"
 readme = "README.md"
-license = "Apache-2.0"
-requires-python = ">=3.9"
-authors = [
-    { name = "Plaw, Inc." }
-]
+license = "MIT"
+requires-python = ">=3.10"
 keywords = [
     "ai",
     "agent",
@@ -21,65 +18,34 @@ keywords = [
     "llm",
     "openai",
     "anthropic",
-    "langchain"
-]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "gemini"
 ]
 dependencies = [
     "pyyaml>=6.0",
-    "httpx>=0.25.0",
+    "aiohttp>=3.8.0",
 ]
 
 [project.optional-dependencies]
+openai = ["openai>=1.0.0"]
+anthropic = ["anthropic>=0.20.0"]
+gemini = ["google-genai>=1.0.0"]
+all = [
+    "openai>=1.0.0",
+    "anthropic>=0.20.0",
+    "google-genai>=1.0.0",
+]
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "pytest-cov>=4.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0",
-    "types-PyYAML>=6.0",
-]
-openai = [
-    "openai>=1.0",
-]
-anthropic = [
-    "anthropic>=0.18",
-]
-langchain = [
-    "langchain>=0.1",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "mypy>=1.0.0",
 ]
 
-[project.urls]
-Homepage = "https://veto.run"
-Repository = "https://github.com/VulnZap/veto"
-Documentation = "https://github.com/VulnZap/veto/tree/master/packages/sdk-python"
+[project.scripts]
+veto = "veto.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/veto_sdk"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py39"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+packages = ["veto"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 strict = true
-warn_return_any = true
-warn_unused_ignores = true
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]

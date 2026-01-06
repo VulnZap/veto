@@ -13,6 +13,13 @@ import { callOpenAI } from './openai.js';
 
 /**
  * Call OpenRouter API with the given prompt.
+ *
+ * OpenRouter uses the same API format as OpenAI, so we delegate to callOpenAI.
+ *
+ * @param messages - Provider-specific message structure
+ * @param config - Resolved custom configuration
+ * @param logger - Logger instance
+ * @returns Raw text response from OpenRouter
  */
 export async function callOpenRouter(
   messages: ProviderMessages,

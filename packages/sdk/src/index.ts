@@ -74,6 +74,15 @@ export type {
   ValidationAPIResponse,
 } from './rules/types.js';
 
+// Custom provider types
+export type {
+  CustomConfig,
+  CustomProvider,
+  CustomResponse,
+  CustomToolCall,
+} from './custom/types.js';
+export { CustomClient } from './custom/client.js';
+
 // Interception result
 export type { InterceptionResult } from './core/interceptor.js';
 export type { HistoryStats } from './core/history.js';
@@ -100,15 +109,6 @@ export type {
   GoogleTool,
   GoogleFunctionCall,
 } from './providers/types.js';
-
-// Custom LLM provider module
-export type {
-  CustomProvider,
-  CustomConfig,
-  CustomResponse,
-  CustomToolCall,
-} from './custom/types.js';
-export { CustomClient } from './custom/client.js';
 
 // CLI init function (for programmatic use)
 export { init, isInitialized } from './cli/init.js';

@@ -11,7 +11,6 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import type { Logger } from '../utils/logger.js';
 import type { Rule, RuleSet, LoadedRules } from './types.js';
-import { parseRuleSetStrict } from './types.js';
 
 /**
  * Options for the rule loader.
@@ -123,14 +122,16 @@ export class RuleLoader {
       return;
     }
 
-    const ruleSet = parseRuleSetStrict(parsed, filePath);
-    this.loadedRules.ruleSets.push(ruleSet);
-    this.loadedRules.sourceFiles.push(filePath);
-    this.logger.info('Loaded rule set', {
-      name: ruleSet.name,
-      ruleCount: ruleSet.rules.length,
-      path: filePath,
-    });
+    const ruleSet = this.parseRuleSet(parsed as Record<string, unknown>, filePath);
+    if (ruleSet) {
+      this.loadedRules.ruleSets.push(ruleSet);
+      this.loadedRules.sourceFiles.push(filePath);
+      this.logger.info('Loaded rule set', {
+        name: ruleSet.name,
+        ruleCount: ruleSet.rules.length,
+        path: filePath,
+      });
+    }
   }
 
   /**
@@ -149,10 +150,12 @@ export class RuleLoader {
       return;
     }
 
-    const ruleSet = parseRuleSetStrict(parsed, sourceName);
-    this.loadedRules.ruleSets.push(ruleSet);
-    this.loadedRules.sourceFiles.push(sourceName);
-    this.buildIndex();
+    const ruleSet = this.parseRuleSet(parsed as Record<string, unknown>, sourceName);
+    if (ruleSet) {
+      this.loadedRules.ruleSets.push(ruleSet);
+      this.loadedRules.sourceFiles.push(sourceName);
+      this.buildIndex();
+    }
   }
 
   /**
@@ -249,6 +252,72 @@ export class RuleLoader {
     }
 
     return files;
+  }
+
+  /**
+   * Parse a rule set from parsed YAML.
+   */
+  private parseRuleSet(
+    data: Record<string, unknown>,
+    source: string
+  ): RuleSet | null {
+    // Check if this is a rule set format or just a list of rules
+    if (Array.isArray(data)) {
+      // It's just an array of rules
+      return {
+        version: '1.0',
+        name: source,
+        rules: data.map((r, i) => this.parseRule(r, `${source}:rule-${i}`)),
+      };
+    }
+
+    // Check for rules array in the object
+    const rules = data.rules as unknown[];
+    if (!rules || !Array.isArray(rules)) {
+      // Maybe it's a single rule
+      if (data.id && data.name) {
+        return {
+          version: '1.0',
+          name: source,
+          rules: [this.parseRule(data, source)],
+        };
+      }
+      this.logger.warn('No rules found in file', { source });
+      return null;
+    }
+
+    return {
+      version: (data.version as string) ?? '1.0',
+      name: (data.name as string) ?? source,
+      description: data.description as string | undefined,
+      rules: rules.map((r, i) => this.parseRule(r, `${source}:rule-${i}`)),
+      settings: data.settings as RuleSet['settings'],
+    };
+  }
+
+  /**
+   * Parse a single rule from YAML data.
+   */
+  private parseRule(data: unknown, source: string): Rule {
+    if (!data || typeof data !== 'object') {
+      throw new Error(`Invalid rule at ${source}`);
+    }
+
+    const ruleData = data as Record<string, unknown>;
+
+    return {
+      id: (ruleData.id as string) ?? `auto-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: (ruleData.name as string) ?? 'Unnamed Rule',
+      description: ruleData.description as string | undefined,
+      enabled: ruleData.enabled !== false, // Default to true
+      severity: (ruleData.severity as Rule['severity']) ?? 'medium',
+      action: (ruleData.action as Rule['action']) ?? 'block',
+      tools: ruleData.tools as string[] | undefined,
+      conditions: ruleData.conditions as Rule['conditions'],
+      condition_groups: ruleData.condition_groups as Rule['condition_groups'],
+      tags: ruleData.tags as string[] | undefined,
+      metadata: ruleData.metadata as Record<string, unknown> | undefined,
+    };
   }
 
   /**

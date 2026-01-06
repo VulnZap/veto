@@ -1,0 +1,86 @@
+version: "1.0"
+name: refund-rules
+description: Rules for automated refund and dispute handling
+
+rules:
+  # Block refunds exceeding order value
+  - id: block-excess-refund
+    name: Block refunds exceeding order value
+    description: Refund amount cannot exceed the original order total
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - process_refund
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: context.order_total
+
+  # Block refunds outside return window
+  - id: block-expired-refund
+    name: Block expired refund requests
+    description: Refunds after 30-day window require manager approval
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - process_refund
+    conditions:
+      - field: context.days_since_delivery
+        operator: greater_than
+        value: 30
+
+  # Block refunds for undelivered orders
+  - id: block-undelivered-refund
+    name: Block undelivered order refunds
+    description: Cannot process refund for orders not yet delivered
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - process_refund
+    conditions:
+      - field: context.order_status
+        operator: not_equals
+        value: "delivered"
+
+  # Allow order lookups
+  - id: allow-order-lookup
+    name: Allow order lookups
+    description: Order lookups are always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - lookup_order
+      - check_refund_eligibility
+      - get_dispute_history
+
+  # Allow escalations
+  - id: allow-escalation
+    name: Allow escalations
+    description: Escalating to human support is always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - escalate_to_human
+      - deny_refund
+
+  # Allow small refunds
+  - id: allow-small-refund
+    name: Allow small refunds
+    description: Refunds under $500 within policy are allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - process_refund
+    conditions:
+      - field: arguments.amount
+        operator: less_than_or_equal
+        value: 500
+      - field: context.days_since_delivery
+        operator: less_than_or_equal
+        value: 30

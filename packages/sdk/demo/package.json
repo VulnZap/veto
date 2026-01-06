@@ -1,0 +1,25 @@
+{
+    "name": "veto-demo",
+    "version": "1.0.0",
+    "description": "Veto financial agent demo",
+    "type": "module",
+    "scripts": {
+        "demo": "tsx run_demo.ts",
+        "agent": "tsx agent_demo.ts"
+    },
+    "dependencies": {
+        "@google/genai": "^1.34.0",
+        "@google/generative-ai": "^0.24.0",
+        "@langchain/core": "^1.1.8",
+        "@langchain/google-genai": "^2.1.3",
+        "@langchain/langgraph": "^1.0.7",
+        "dotenv": "^16.0.0",
+        "langchain": "^1.2.3",
+        "veto": "file:..",
+        "zod": "^4.3.4"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "tsx": "^4.7.0"
+    }
+}

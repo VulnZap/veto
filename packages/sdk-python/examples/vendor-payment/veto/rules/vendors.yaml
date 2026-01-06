@@ -1,0 +1,78 @@
+version: "1.0"
+name: vendor-rules
+description: Rules for vendor payment processing guardrails
+
+rules:
+  # Block large payments without director approval
+  - id: block-large-payment
+    name: Block large payments
+    description: Payments over $25,000 require director approval
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - process_payment
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 25000
+      - field: arguments.directorApproval
+        operator: equals
+        value: false
+
+  # Block suspended vendors
+  - id: block-suspended
+    name: Block suspended vendors
+    description: Cannot pay suspended vendors
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - process_payment
+    conditions:
+      - field: context.vendorStatus
+        operator: equals
+        value: "suspended"
+
+  # Block unverified vendors
+  - id: block-unverified
+    name: Block unverified vendors
+    description: Cannot pay vendors in pending verification
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - process_payment
+    conditions:
+      - field: context.vendorStatus
+        operator: equals
+        value: "pending"
+
+  # Require three-way match for large payments
+  - id: require-matching
+    name: Require three-way matching
+    description: Payments over $10,000 require PO/invoice/receipt matching
+    enabled: true
+    severity: medium
+    action: block
+    tools:
+      - process_payment
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 10000
+      - field: arguments.threeWayMatch
+        operator: equals
+        value: false
+
+  # Allow vendor lookups
+  - id: allow-lookup
+    name: Allow vendor lookups
+    description: Reading vendor info is always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - get_vendor
+      - list_vendors
+      - get_payment_history

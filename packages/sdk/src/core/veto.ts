@@ -14,7 +14,6 @@ import type {
   ToolDefinition,
   ToolCall,
 } from '../types/tool.js';
-import { isExecutableTool } from '../types/tool.js';
 import type {
   Validator,
   NamedValidator,
@@ -29,14 +28,14 @@ import { HistoryTracker, type HistoryStats } from './history.js';
 import { Interceptor, ToolCallDeniedError, type InterceptionResult } from './interceptor.js';
 import type {
   Rule,
+  RuleSet,
   ToolCallContext,
   ToolCallHistorySummary,
   ValidationAPIResponse,
 } from '../rules/types.js';
-import { parseRuleSetStrict, RuleSchemaError } from '../rules/types.js';
 import type { KernelConfig, KernelToolCall } from '../kernel/types.js';
 import { KernelClient } from '../kernel/client.js';
-import type { CustomConfig, CustomToolCall } from '../custom/types.js';
+import type { CustomConfig, CustomToolCall, CustomResponse } from '../custom/types.js';
 import { CustomClient } from '../custom/client.js';
 
 /**
@@ -190,7 +189,6 @@ export class Veto {
   private readonly validationEngine: ValidationEngine;
   private readonly historyTracker: HistoryTracker;
   private readonly interceptor: Interceptor;
-  private readonly registeredTools: Map<string, ToolDefinition> = new Map();
 
   // Configuration
   private readonly configDir: string;
@@ -206,20 +204,14 @@ export class Veto {
 
   // Kernel client (lazy initialized or injected)
   private kernelClient: KernelClient | null = null;
-  private kernelClientPromise: Promise<KernelClient> | null = null;
   private readonly kernelConfig: KernelConfig | null;
 
-  // Custom client (lazy initialized)
+  // Custom provider client (lazy initialized)
   private customClient: CustomClient | null = null;
-  private customClientPromise: Promise<CustomClient> | null = null;
   private readonly customConfig: CustomConfig | null;
 
   // Loaded rules
   private readonly rules: LoadedRulesState;
-
-  private readonly rateLimitWindow = 60000;
-  private readonly rateLimitMax = 100;
-  private readonly rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
   private constructor(
     options: VetoOptions,
@@ -262,17 +254,10 @@ export class Veto {
       this.kernelClient = options.kernelClient;
     }
 
-    // Resolve custom configuration
+    // Resolve custom provider configuration
     if (this.validationMode === 'custom' && config.custom?.provider && config.custom?.model) {
-      const validProviders = ['openai', 'anthropic', 'gemini', 'openrouter'] as const;
-      const provider = config.custom.provider;
-      if (!validProviders.includes(provider as typeof validProviders[number])) {
-        throw new Error(
-          `Invalid custom provider: "${provider}". Must be one of: ${validProviders.join(', ')}`
-        );
-      }
       this.customConfig = {
-        provider: provider as import('../custom/types.js').CustomProvider,
+        provider: config.custom.provider,
         model: config.custom.model,
         apiKey: config.custom.apiKey,
         temperature: config.custom.temperature,
@@ -423,11 +408,20 @@ export class Veto {
     for (const filePath of yamlFiles) {
       try {
         const content = readFileSync(filePath, 'utf-8');
-        const parsed = parseYaml(content);
+        const parsed = parseYaml(content) as RuleSet | Rule[] | Record<string, unknown>;
 
-        const ruleSet = parseRuleSetStrict(parsed, filePath);
+        let rules: Rule[] = [];
 
-        for (const rule of ruleSet.rules) {
+        if (Array.isArray(parsed)) {
+          rules = parsed as Rule[];
+        } else if (parsed && typeof parsed === 'object' && 'rules' in parsed) {
+          rules = (parsed as RuleSet).rules ?? [];
+        } else if (parsed && typeof parsed === 'object' && 'id' in parsed) {
+          rules = [parsed as unknown as Rule];
+        }
+
+        // Process and index rules
+        for (const rule of rules) {
           if (!rule.enabled) continue;
 
           state.allRules.push(rule);
@@ -445,12 +439,9 @@ export class Veto {
 
         logger.debug('Loaded rules from file', {
           path: filePath,
-          count: ruleSet.rules.length,
+          count: rules.length,
         });
       } catch (error) {
-        if (error instanceof RuleSchemaError) {
-          throw error;
-        }
         logger.error(
           'Failed to load rules file',
           { path: filePath },
@@ -505,33 +496,10 @@ export class Veto {
     return [...this.rules.globalRules, ...toolSpecific];
   }
 
-  private checkRateLimit(key: string): void {
-    const now = Date.now();
-    const entry = this.rateLimitMap.get(key);
-
-    if (!entry || now >= entry.resetAt) {
-      this.rateLimitMap.set(key, {
-        count: 1,
-        resetAt: now + this.rateLimitWindow,
-      });
-      return;
-    }
-
-    if (entry.count >= this.rateLimitMax) {
-      throw new Error(
-        `Rate limit exceeded: ${this.rateLimitMax} validations per ${this.rateLimitWindow / 1000}s`
-      );
-    }
-
-    entry.count++;
-  }
-
   /**
    * Validate a tool call with the external API.
    */
   private async validateWithAPI(context: ValidationContext): Promise<ValidationResult> {
-    this.checkRateLimit(`api:${context.toolName}`);
-
     const rules = this.getRulesForTool(context.toolName);
 
     // If no rules, allow by default
@@ -701,36 +669,27 @@ export class Veto {
   /**
    * Get or create the kernel client.
    */
-  private async getKernelClient(): Promise<KernelClient> {
+  private getKernelClient(): KernelClient {
     if (this.kernelClient) {
       return this.kernelClient;
-    }
-
-    if (this.kernelClientPromise) {
-      return this.kernelClientPromise;
     }
 
     if (!this.kernelConfig) {
       throw new Error('Kernel configuration not available');
     }
 
-    this.kernelClientPromise = Promise.resolve().then(() => {
-      this.kernelClient = new KernelClient({
-        config: this.kernelConfig!,
-        logger: this.logger,
-      });
-      return this.kernelClient;
+    this.kernelClient = new KernelClient({
+      config: this.kernelConfig,
+      logger: this.logger,
     });
 
-    return this.kernelClientPromise;
+    return this.kernelClient;
   }
 
   /**
    * Validate a tool call with the local kernel model.
    */
   private async validateWithKernel(context: ValidationContext): Promise<ValidationResult> {
-    this.checkRateLimit(`kernel:${context.toolName}`);
-
     const rules = this.getRulesForTool(context.toolName);
 
     // If no rules, allow by default
@@ -745,7 +704,7 @@ export class Veto {
     };
 
     try {
-      const kernelClient = await this.getKernelClient();
+      const kernelClient = this.getKernelClient();
       const response = await kernelClient.evaluate(toolCall, rules);
 
       return this.handleKernelResponse(response, context);
@@ -833,15 +792,11 @@ export class Veto {
   }
 
   /**
-   * Get or create the custom client.
+   * Get or create the custom provider client.
    */
-  private async getCustomClient(): Promise<CustomClient> {
+  private getCustomClient(): CustomClient {
     if (this.customClient) {
       return this.customClient;
-    }
-
-    if (this.customClientPromise) {
-      return this.customClientPromise;
     }
 
     if (!this.customConfig) {
@@ -850,25 +805,21 @@ export class Veto {
       );
     }
 
-    this.customClientPromise = Promise.resolve().then(() => {
-      this.customClient = new CustomClient({
-        config: this.customConfig!,
-        logger: this.logger,
-      });
-      return this.customClient;
+    this.customClient = new CustomClient({
+      config: this.customConfig,
+      logger: this.logger,
     });
 
-    return this.customClientPromise;
+    return this.customClient;
   }
 
   /**
-   * Validate a tool call with the custom LLM provider.
+   * Validate a tool call with custom LLM provider.
    */
   private async validateWithCustom(context: ValidationContext): Promise<ValidationResult> {
-    this.checkRateLimit(`custom:${context.toolName}`);
-
     const rules = this.getRulesForTool(context.toolName);
 
+    // If no rules, allow by default
     if (rules.length === 0) {
       this.logger.debug('No rules for tool, allowing', { tool: context.toolName });
       return { decision: 'allow' };
@@ -880,7 +831,7 @@ export class Veto {
     };
 
     try {
-      const customClient = await this.getCustomClient();
+      const customClient = this.getCustomClient();
       const response = await customClient.evaluate(toolCall, rules);
 
       return this.handleCustomResponse(response, context);
@@ -891,10 +842,10 @@ export class Veto {
   }
 
   /**
-   * Handle successful custom response.
+   * Handle successful custom provider response.
    */
   private handleCustomResponse(
-    response: import('../custom/types.js').CustomResponse,
+    response: CustomResponse,
     context: ValidationContext
   ): ValidationResult {
     const metadata = {
@@ -915,7 +866,9 @@ export class Veto {
         metadata,
       };
     } else {
+      // Custom provider returned block decision
       if (this.mode === 'log') {
+        // Log mode: log the block but allow the call
         this.logger.warn('Tool call would be blocked (log mode)', {
           tool: context.toolName,
           blockWeight: response.block_weight,
@@ -928,6 +881,7 @@ export class Veto {
           metadata: { ...metadata, blocked_in_strict_mode: true },
         };
       } else {
+        // Strict mode: actually block the call
         this.logger.warn('Tool call blocked by custom provider', {
           tool: context.toolName,
           blockWeight: response.block_weight,
@@ -984,86 +938,6 @@ export class Veto {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  /**
-   * Wrap tools for use with an AI provider.
-   *
-   * Returns an object containing:
-   * - `definitions`: Tool schemas to pass to the AI model
-   * - `implementations`: Object with wrapped handler functions keyed by tool name
-   *
-   * @param tools - Tools to wrap (must have handlers)
-   * @returns Object with toolDefinitions and toolImplementations
-   *
-   * @example
-   * ```typescript
-   * const tools = [
-   *   {
-   *     name: 'read_file',
-   *     inputSchema: { type: 'object', properties: { path: { type: 'string' } } },
-   *     handler: async (args) => fs.readFileSync(args.path, 'utf-8')
-   *   }
-   * ];
-   *
-   * const veto = await Veto.init();
-   * const { definitions, implementations } = veto.wrapTools(tools);
-   *
-   * // Pass definitions to AI model
-   * const response = await openai.chat.completions.create({
-   *   tools: toOpenAITools(definitions),
-   *   ...
-   * });
-   *
-   * // Execute tool calls using implementations
-   * const result = await implementations.read_file({ path: '/home/user/file.txt' });
-   * ```
-   */
-  wrapTools(tools: readonly ToolDefinition[]): WrappedTools {
-    const definitions: ToolDefinition[] = [];
-    const implementations: Record<string, WrappedHandler> = {};
-
-    for (const tool of tools) {
-      this.registeredTools.set(tool.name, tool);
-
-      // Extract definition (without handler)
-      const { handler: _, ...definition } = tool as ToolDefinition & { handler?: unknown };
-      definitions.push(definition as ToolDefinition);
-
-      if (isExecutableTool(tool)) {
-        // Wrap the handler with automatic validation
-        const originalHandler = tool.handler;
-        const wrappedHandler: WrappedHandler = async (args: Record<string, unknown>) => {
-          const result = await this.validateToolCall({
-            id: generateToolCallId(),
-            name: tool.name,
-            arguments: args,
-          });
-
-          if (!result.allowed) {
-            throw new ToolCallDeniedError(
-              tool.name,
-              result.originalCall.id || '',
-              result.validationResult
-            );
-          }
-
-          // Execute with potentially modified arguments
-          return originalHandler(result.finalArguments ?? args);
-        };
-
-        implementations[tool.name] = wrappedHandler;
-      }
-    }
-
-    this.logger.info('Tools wrapped', {
-      count: tools.length,
-      names: tools.map((t) => t.name),
-    });
-
-    return {
-      definitions,
-      implementations,
-    };
-  }
 
   /**
    * Wrap tools with Veto validation (provider-agnostic).
@@ -1091,7 +965,7 @@ export class Veto {
    * const wrappedTools = veto.wrap(tools);
    *
    * const agent = createAgent({
-   *   model: 'openai:gpt-5.2',
+   *   model: 'openai:gpt-4o',
    *   tools: wrappedTools, // Same type as input!
    * });
    * ```
@@ -1101,67 +975,29 @@ export class Veto {
   }
 
   /**
-   * Check if a tool is a LangChain tool (has 'func' property).
+   * Wrap a single tool with Veto validation (provider-agnostic).
+   *
+   * @param tool - The tool to wrap
+   * @returns The same tool with Veto validation injected
    */
-  private isLangChainTool(tool: Record<string, unknown>): boolean {
-    return typeof tool.func === 'function';
-  }
-
-  /**
-   * Create a shallow clone of a tool that inherits from the original prototype.
-   */
-  private cloneTool<T>(tool: T): T {
-    const wrapped = Object.create(Object.getPrototypeOf(tool));
-    Object.assign(wrapped, tool);
-    return wrapped as T;
-  }
-
-  /**
-   * Validate and execute a tool call, throwing if denied.
-   */
-  private async validateAndExecute(
-    toolName: string,
-    args: Record<string, unknown>,
-    originalFunc: (input: Record<string, unknown>) => unknown,
-    context: unknown
-  ): Promise<unknown> {
-    const result = await this.validateToolCall({
-      id: generateToolCallId(),
-      name: toolName,
-      arguments: args,
-    });
-
-    if (!result.allowed) {
-      throw new ToolCallDeniedError(
-        toolName,
-        result.originalCall.id || '',
-        result.validationResult
-      );
-    }
-
-    const finalArgs = result.finalArguments ?? args;
-    return originalFunc.call(context, finalArgs);
-  }
-
-  /**
-   * Wrap a LangChain tool (has 'func' and optionally 'invoke' properties).
-   */
-  private wrapLangChainTool<T extends { name: string }>(tool: T): T {
+  wrapTool<T extends { name: string }>(tool: T): T {
     const toolName = tool.name;
     const toolAny = tool as Record<string, unknown>;
-    const originalFunc = toolAny.func as (input: Record<string, unknown>) => unknown;
+    const veto = this;
 
-    const wrapped = this.cloneTool(tool);
-    const wrappedAny = wrapped as Record<string, unknown>;
+    // For LangChain tools, we need to wrap the 'func' property
+    // and also override 'invoke' to ensure validation happens
+    if (typeof toolAny.func === 'function') {
+      const originalFunc = toolAny.func as (input: Record<string, unknown>) => unknown;
 
-    wrappedAny.func = async (input: Record<string, unknown>): Promise<unknown> => {
-      return this.validateAndExecute(toolName, input, originalFunc, tool);
-    };
+      // Create a new object that inherits from the original
+      const wrapped = Object.create(Object.getPrototypeOf(tool));
+      Object.assign(wrapped, tool);
 
-    if (typeof toolAny.invoke === 'function') {
-      const originalInvoke = toolAny.invoke as (...args: unknown[]) => Promise<unknown>;
-      wrappedAny.invoke = async (input: Record<string, unknown>, ...rest: unknown[]): Promise<unknown> => {
-        const result = await this.validateToolCall({
+      // Create wrapped func that validates before executing
+      const wrappedFunc = async (input: Record<string, unknown>): Promise<unknown> => {
+        // Validate with Veto
+        const result = await veto.validateToolCall({
           id: generateToolCallId(),
           name: toolName,
           arguments: input,
@@ -1175,61 +1011,62 @@ export class Veto {
           );
         }
 
+        // Execute the original function with potentially modified arguments
         const finalArgs = result.finalArguments ?? input;
-        return originalInvoke.call(tool, finalArgs, ...rest);
+        return originalFunc.call(tool, finalArgs);
       };
+
+      // Replace func
+      wrapped.func = wrappedFunc;
+
+      // Override invoke to use our wrapped func
+      if (typeof toolAny.invoke === 'function') {
+        const originalInvoke = toolAny.invoke as (...args: unknown[]) => Promise<unknown>;
+        wrapped.invoke = async function (input: Record<string, unknown>, ...rest: unknown[]): Promise<unknown> {
+          // Validate with Veto first
+          const result = await veto.validateToolCall({
+            id: generateToolCallId(),
+            name: toolName,
+            arguments: input,
+          });
+
+          if (!result.allowed) {
+            throw new ToolCallDeniedError(
+              toolName,
+              result.originalCall.id || '',
+              result.validationResult
+            );
+          }
+
+          // Call original invoke with potentially modified arguments
+          const finalArgs = result.finalArguments ?? input;
+          return originalInvoke.call(tool, finalArgs, ...rest);
+        };
+      }
+
+      veto.logger.debug('Tool wrapped', { name: toolName });
+      return wrapped as T;
     }
 
-    this.logger.debug('LangChain tool wrapped', { name: toolName });
-    return wrapped;
-  }
-
-  /**
-   * Normalize function arguments to a Record format.
-   */
-  private normalizeArgs(args: unknown[]): Record<string, unknown> {
-    if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
-      return args[0] as Record<string, unknown>;
-    }
-    return { args };
-  }
-
-  /**
-   * Apply final arguments to the original function.
-   */
-  private applyFinalArgs(
-    originalFunc: (...args: unknown[]) => unknown,
-    context: unknown,
-    originalArgs: unknown[],
-    finalArgs: Record<string, unknown>
-  ): unknown {
-    if (originalArgs.length === 1 && typeof originalArgs[0] === 'object') {
-      return originalFunc.call(context, finalArgs);
-    }
-    if (finalArgs.args && Array.isArray(finalArgs.args)) {
-      return originalFunc.apply(context, finalArgs.args as unknown[]);
-    }
-    return originalFunc.apply(context, originalArgs);
-  }
-
-  /**
-   * Wrap a generic tool (has handler, run, execute, call, or _call property).
-   */
-  private wrapGenericTool<T extends { name: string }>(tool: T): T | null {
-    const toolName = tool.name;
-    const toolAny = tool as Record<string, unknown>;
+    // Fallback for other tool types (handler, run, execute, etc.)
     const execFunctionKeys = ['handler', 'run', 'execute', 'call', '_call'];
 
     for (const key of execFunctionKeys) {
       if (typeof toolAny[key] === 'function') {
         const originalFunc = toolAny[key] as (...args: unknown[]) => unknown;
-        const wrapped = this.cloneTool(tool);
-        const wrappedAny = wrapped as Record<string, unknown>;
 
-        wrappedAny[key] = async (...args: unknown[]): Promise<unknown> => {
-          const callArgs = this.normalizeArgs(args);
+        const wrapped = Object.create(Object.getPrototypeOf(tool));
+        Object.assign(wrapped, tool);
 
-          const result = await this.validateToolCall({
+        const wrappedFunc = async (...args: unknown[]): Promise<unknown> => {
+          let callArgs: Record<string, unknown>;
+          if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
+            callArgs = args[0] as Record<string, unknown>;
+          } else {
+            callArgs = { args };
+          }
+
+          const result = await veto.validateToolCall({
             id: generateToolCallId(),
             name: toolName,
             arguments: callArgs,
@@ -1244,36 +1081,20 @@ export class Veto {
           }
 
           const finalArgs = result.finalArguments ?? callArgs;
-          return this.applyFinalArgs(originalFunc, tool, args, finalArgs);
+          if (args.length === 1 && typeof args[0] === 'object') {
+            return originalFunc.call(tool, finalArgs);
+          }
+          return originalFunc.apply(tool, args);
         };
 
-        this.logger.debug('Generic tool wrapped', { name: toolName, key });
-        return wrapped;
+        wrapped[key] = wrappedFunc;
+        veto.logger.debug('Tool wrapped', { name: toolName });
+        return wrapped as T;
       }
     }
 
-    return null;
-  }
-
-  /**
-   * Wrap a single tool with Veto validation (provider-agnostic).
-   *
-   * @param tool - The tool to wrap
-   * @returns The same tool with Veto validation injected
-   */
-  wrapTool<T extends { name: string }>(tool: T): T {
-    const toolAny = tool as Record<string, unknown>;
-
-    if (this.isLangChainTool(toolAny)) {
-      return this.wrapLangChainTool(tool);
-    }
-
-    const wrapped = this.wrapGenericTool(tool);
-    if (wrapped) {
-      return wrapped;
-    }
-
-    this.logger.warn('No wrappable function found on tool', { name: tool.name });
+    // No wrappable function found, return as-is
+    veto.logger.warn('No wrappable function found on tool', { name: toolName });
     return tool;
   }
 
@@ -1283,7 +1104,7 @@ export class Veto {
    * @param call - The tool call to validate
    * @returns Validation result
    */
-  async validateToolCall(call: ToolCall): Promise<InterceptionResult> {
+  private async validateToolCall(call: ToolCall): Promise<InterceptionResult> {
     const normalizedCall: ToolCall = {
       ...call,
       id: call.id || generateToolCallId(),
@@ -1292,108 +1113,7 @@ export class Veto {
     return this.interceptor.intercept(normalizedCall);
   }
 
-  /**
-   * Validate a tool call and throw if denied.
-   *
-   * @param call - The tool call to validate
-   * @returns Validation result (only if allowed)
-   * @throws {ToolCallDeniedError} If the call is denied
-   */
-  async validateToolCallOrThrow(call: ToolCall): Promise<InterceptionResult> {
-    const normalizedCall: ToolCall = {
-      ...call,
-      id: call.id || generateToolCallId(),
-    };
 
-    return this.interceptor.interceptOrThrow(normalizedCall);
-  }
-
-  /**
-   * Get all registered tools.
-   *
-   * Returns an array of tool definitions that have been registered with Veto
-   * via wrapTools(), wrap(), or wrapTool(). This is useful for inspecting
-   * which tools are currently being validated.
-   *
-   * @returns Array of tool definitions
-   *
-   * @example
-   * ```typescript
-   * const veto = await Veto.init();
-   * veto.wrapTools(myTools);
-   * const registered = veto.getRegisteredTools();
-   * console.log(`Registered ${registered.length} tools`);
-   * ```
-   */
-  getRegisteredTools(): readonly ToolDefinition[] {
-    return Array.from(this.registeredTools.values());
-  }
-
-  /**
-   * Get all loaded rules.
-   *
-   * Returns an array of all rules that were loaded from the veto/rules directory.
-   * This includes both global rules (apply to all tools) and tool-specific rules.
-   * Useful for debugging rule configuration or displaying active rules to users.
-   *
-   * @returns Array of all loaded rules
-   *
-   * @example
-   * ```typescript
-   * const veto = await Veto.init();
-   * const rules = veto.getLoadedRules();
-   * console.log(`Loaded ${rules.length} rules`);
-   * rules.forEach(rule => {
-   *   console.log(`- ${rule.name} (${rule.severity})`);
-   * });
-   * ```
-   */
-  getLoadedRules(): readonly Rule[] {
-    return this.rules.allRules;
-  }
-
-  /**
-   * Get current operating mode.
-   *
-   * Returns the current mode that determines how Veto handles validation failures:
-   * - "strict": Blocks tool calls when validation fails (production mode)
-   * - "log": Only logs validation failures, allows all calls (development mode)
-   *
-   * The mode can be set via VetoOptions when initializing or in veto.config.yaml.
-   *
-   * @returns Current operating mode
-   *
-   * @example
-   * ```typescript
-   * const veto = await Veto.init({ mode: 'log' });
-   * console.log(veto.getMode()); // 'log'
-   * ```
-   */
-  getMode(): VetoMode {
-    return this.mode;
-  }
-
-  /**
-   * Get current validation mode.
-   *
-   * Returns the validation mode that determines how tool calls are validated:
-   * - "api": Validate via external HTTP API (default)
-   * - "kernel": Validate via local Ollama model
-   * - "custom": Validate via custom LLM provider (OpenAI, Anthropic, Gemini, OpenRouter)
-   *
-   * The validation mode is configured in veto.config.yaml under validation.mode.
-   *
-   * @returns Current validation mode
-   *
-   * @example
-   * ```typescript
-   * const veto = await Veto.init();
-   * console.log(veto.getValidationMode()); // 'api'
-   * ```
-   */
-  getValidationMode(): ValidationMode {
-    return this.validationMode;
-  }
 
   /**
    * Get history statistics.

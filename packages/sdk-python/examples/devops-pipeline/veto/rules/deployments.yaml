@@ -1,0 +1,95 @@
+version: "1.0"
+name: deployment-rules
+description: Rules for CI/CD pipeline automation guardrails
+
+rules:
+  # Block production deployments
+  - id: block-prod-deploy
+    name: Block production deployments
+    description: Production deployments require manual approval
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - deploy_production
+    conditions:
+      - field: arguments.environment
+        operator: equals
+        value: "production"
+
+  # Block dangerous commands
+  - id: block-destructive-commands
+    name: Block destructive commands
+    description: Prevent rm -rf and similar dangerous operations
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - execute_command
+    conditions:
+      - field: arguments.command
+        operator: contains
+        value: "rm -rf"
+
+  # Block sudo commands on production
+  - id: block-sudo-prod
+    name: Block sudo on production
+    description: Sudo commands on production require approval
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - execute_command
+    conditions:
+      - field: arguments.command
+        operator: contains
+        value: "sudo"
+      - field: arguments.target
+        operator: contains
+        value: "prod"
+
+  # Allow staging deployments
+  - id: allow-staging
+    name: Allow staging deployments
+    description: Staging environment deployments are allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - deploy_staging
+    conditions:
+      - field: arguments.environment
+        operator: equals
+        value: "staging"
+
+  # Always allow tests
+  - id: allow-tests
+    name: Allow test execution
+    description: Running tests is always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - run_tests
+
+  # Always allow rollbacks
+  - id: allow-rollback
+    name: Allow rollbacks
+    description: Rollback operations are always allowed (incident response)
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - rollback_deployment
+
+  # Allow monitoring
+  - id: allow-monitoring
+    name: Allow monitoring
+    description: Service status checks are always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - check_service_status
+      - view_logs
+      - get_metrics

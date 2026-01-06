@@ -1,0 +1,79 @@
+version: "1.0"
+name: invoice-rules
+description: Rules for automated invoice processing guardrails
+
+rules:
+  # Block large invoices without approval
+  - id: block-large-invoice
+    name: Block large invoices
+    description: Invoices over $10,000 require manager approval
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - approve_invoice
+      - schedule_payment
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 10000
+      - field: arguments.managerApproval
+        operator: equals
+        value: false
+
+  # Block unverified vendors
+  - id: block-unverified-vendor
+    name: Block unverified vendors
+    description: Cannot process payments to unverified vendors
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - schedule_payment
+    conditions:
+      - field: context.vendorStatus
+        operator: not_equals
+        value: "verified"
+
+  # Block duplicate invoices
+  - id: block-duplicate
+    name: Block duplicate invoices
+    description: Prevent processing duplicate invoice numbers
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - approve_invoice
+    conditions:
+      - field: context.isDuplicate
+        operator: equals
+        value: true
+
+  # Block invoices without PO
+  - id: require-po-large
+    name: Require PO for large invoices
+    description: Invoices over $5,000 require a purchase order
+    enabled: true
+    severity: medium
+    action: block
+    tools:
+      - approve_invoice
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 5000
+      - field: arguments.purchaseOrderId
+        operator: equals
+        value: null
+
+  # Allow invoice lookups
+  - id: allow-lookup
+    name: Allow invoice lookups
+    description: Viewing invoices is always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - get_invoice
+      - list_invoices
+      - get_vendor

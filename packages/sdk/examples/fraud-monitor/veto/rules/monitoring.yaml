@@ -1,0 +1,73 @@
+version: "1.0"
+name: monitoring-rules
+description: Rules for transaction monitoring (LOG mode - observe only)
+
+# In LOG mode, these rules define what gets flagged for attention
+# but no actions are blocked
+
+rules:
+  # Flag high-value transactions for attention
+  - id: flag-high-value
+    name: Flag high-value transactions
+    description: Transactions over $50,000 should be logged with extra attention
+    enabled: true
+    severity: high
+    action: log
+    tools:
+      - scan_transactions
+      - flag_suspicious
+    conditions:
+      - field: context.transaction_amount
+        operator: greater_than
+        value: 50000
+
+  # Flag offshore transactions
+  - id: flag-offshore
+    name: Flag offshore transactions
+    description: Transactions to offshore jurisdictions need compliance review
+    enabled: true
+    severity: high
+    action: log
+    tools:
+      - scan_transactions
+    conditions:
+      - field: context.location
+        operator: in
+        value:
+          - "KY"  # Cayman Islands
+          - "MT"  # Malta
+          - "VG"  # British Virgin Islands
+
+  # Flag crypto-related transactions
+  - id: flag-crypto
+    name: Flag crypto transactions
+    description: Crypto exchange transactions need additional monitoring
+    enabled: true
+    severity: medium
+    action: log
+    tools:
+      - scan_transactions
+    conditions:
+      - field: context.merchant
+        operator: contains
+        value: "Crypto"
+
+  # Log all escalations
+  - id: log-escalations
+    name: Log all escalations
+    description: Track all cases sent to compliance team
+    enabled: true
+    severity: high
+    action: log
+    tools:
+      - escalate_case
+
+  # Log report generation
+  - id: log-reports
+    name: Log report generation
+    description: Track all compliance reports generated
+    enabled: true
+    severity: low
+    action: log
+    tools:
+      - generate_report

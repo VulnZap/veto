@@ -1,0 +1,90 @@
+version: "1.0"
+name: financial-rules
+description: Rules for financial transaction guardrails
+
+rules:
+  - id: block-large-payments
+    name: Block large payments
+    description: Payments over $1000 are not allowed for safety
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - make_payment
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 1000
+
+  - id: block-blacklisted-recipients
+    name: Block blacklisted recipients
+    description: Prevent payments to known suspicious accounts
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - make_payment
+    conditions:
+      - field: arguments.recipient
+        operator: in
+        value:
+          - "scammer@fraud.com"
+          - "suspicious_account_123"
+          - "blocked_user"
+
+  - id: require-approval-large-bills
+    name: Require approval for large bills
+    description: Bill payments over $500 require human approval
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - pay_bill
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 500
+
+  - id: allow-small-payments
+    name: Allow small payments
+    description: Payments under $1000 are allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - make_payment
+    conditions:
+      - field: arguments.amount
+        operator: less_than_or_equal
+        value: 1000
+
+  - id: allow-small-bills
+    name: Allow small bills
+    description: Bill payments under $500 are allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - pay_bill
+    conditions:
+      - field: arguments.amount
+        operator: less_than_or_equal
+        value: 500
+
+  - id: allow-balance-check
+    name: Allow balance check
+    description: Balance checks are always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - check_balance
+
+  - id: allow-transaction-history
+    name: Allow transaction history
+    description: Transaction history is always allowed
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - get_transaction_history

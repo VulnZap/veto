@@ -6,15 +6,14 @@
 
 import type { Logger } from '../utils/logger.js';
 import type { Rule } from '../rules/types.js';
-import { buildUserPrompt, buildProviderMessages } from './prompt.js';
-import { parseValidationResponse, ResponseParseError } from '../utils/response-parser.js';
 import type {
   CustomConfig,
-  CustomToolCall,
   CustomResponse,
+  CustomToolCall,
   ResolvedCustomConfig,
 } from './types.js';
-import { CustomError, resolveCustomConfig } from './types.js';
+import { CustomError, CustomParseError, resolveCustomConfig } from './types.js';
+import { buildUserPrompt, buildProviderMessages } from './prompt.js';
 import { callOpenAI } from './providers/openai.js';
 import { callAnthropic } from './providers/anthropic.js';
 import { callGemini } from './providers/gemini.js';
@@ -50,6 +49,10 @@ export class CustomClient {
 
   /**
    * Evaluate a tool call against rules using the custom LLM provider.
+   *
+   * @param toolCall - The tool call to evaluate
+   * @param rules - Rules to evaluate against
+   * @returns Custom response with decision and weights
    */
   async evaluate(toolCall: CustomToolCall, rules: Rule[]): Promise<CustomResponse> {
     const userPrompt = buildUserPrompt(toolCall, rules);
@@ -62,10 +65,11 @@ export class CustomClient {
     });
 
     try {
+      // Route to appropriate provider
       const content = await this.callProvider(messages);
       return this.parseResponse(content);
     } catch (error) {
-      if (error instanceof CustomError) {
+      if (error instanceof CustomError || error instanceof CustomParseError) {
         throw error;
       }
 
@@ -78,8 +82,11 @@ export class CustomClient {
 
   /**
    * Call the appropriate provider based on configuration.
+   *
+   * @param messages - Provider-specific message structure
+   * @returns Raw text response from provider
    */
-  private async callProvider(messages: ReturnType<typeof buildProviderMessages>): Promise<string> {
+  private async callProvider(messages: any): Promise<string> {
     switch (this.config.provider) {
       case 'openai':
         return callOpenAI(messages, this.config, this.logger);
@@ -96,30 +103,72 @@ export class CustomClient {
 
   /**
    * Parse LLM response into structured format.
+   *
+   * @param content - Raw response from LLM
+   * @returns Parsed custom response
    */
   private parseResponse(content: string): CustomResponse {
     this.logger.debug('Raw custom provider response:', { rawContent: content });
 
-    try {
-      const result = parseValidationResponse(content);
-
-      this.logger.debug('Custom response parsed', {
-        decision: result.decision,
-        passWeight: result.pass_weight,
-        blockWeight: result.block_weight,
-      });
-
-      return result;
-    } catch (error) {
-      if (error instanceof ResponseParseError) {
-        throw new CustomError(error.message, error);
-      }
-      throw error;
+    // Extract JSON from response (model might include extra text)
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new CustomParseError('No JSON found in response', content);
     }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      throw new CustomParseError('Invalid JSON in response', content);
+    }
+
+    // Validate required fields
+    if (!parsed || typeof parsed !== 'object') {
+      throw new CustomParseError('Response is not an object', content);
+    }
+
+    const response = parsed as Record<string, unknown>;
+
+    if (typeof response.pass_weight !== 'number') {
+      throw new CustomParseError('Missing or invalid pass_weight', content);
+    }
+    if (typeof response.block_weight !== 'number') {
+      throw new CustomParseError('Missing or invalid block_weight', content);
+    }
+    if (response.decision !== 'pass' && response.decision !== 'block') {
+      throw new CustomParseError('Missing or invalid decision', content);
+    }
+    if (typeof response.reasoning !== 'string') {
+      throw new CustomParseError('Missing or invalid reasoning', content);
+    }
+
+    const result: CustomResponse = {
+      pass_weight: response.pass_weight,
+      block_weight: response.block_weight,
+      decision: response.decision,
+      reasoning: response.reasoning,
+    };
+
+    if (Array.isArray(response.matched_rules)) {
+      result.matched_rules = response.matched_rules.filter(
+        (r): r is string => typeof r === 'string'
+      );
+    }
+
+    this.logger.debug('Custom response parsed', {
+      decision: result.decision,
+      passWeight: result.pass_weight,
+      blockWeight: result.block_weight,
+    });
+
+    return result;
   }
 
   /**
    * Check if the custom provider is available and working.
+   *
+   * @returns True if health check passes
    */
   async healthCheck(): Promise<boolean> {
     try {
@@ -138,6 +187,9 @@ export class CustomClient {
 
 /**
  * Create a new custom client.
+ *
+ * @param options - Client options
+ * @returns New custom client instance
  */
 export function createCustomClient(options: CustomClientOptions): CustomClient {
   return new CustomClient(options);

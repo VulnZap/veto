@@ -9,24 +9,38 @@ import type { ResolvedCustomConfig } from '../types.js';
 import type { ProviderMessages } from '../prompt.js';
 import { CustomError } from '../types.js';
 
-let GeminiModule: typeof import('@google/generative-ai') | null = null;
+/**
+ * Schema for Veto validation response.
+ */
+const RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    pass_weight: { type: 'number', description: 'Weight for pass decision (0-1)' },
+    block_weight: { type: 'number', description: 'Weight for block decision (0-1)' },
+    decision: { type: 'string', enum: ['pass', 'block'], description: 'The validation decision' },
+    reasoning: { type: 'string', description: 'Brief explanation of the decision' },
+  },
+  required: ['pass_weight', 'block_weight', 'decision', 'reasoning'],
+};
 
-async function getGeminiModule(): Promise<typeof import('@google/generative-ai')> {
-  if (!GeminiModule) {
-    GeminiModule = await import('@google/generative-ai');
-  }
-  return GeminiModule;
-}
-
+/**
+ * Call Google Gemini API with the given prompt.
+ *
+ * @param messages - Provider-specific message structure
+ * @param config - Resolved custom configuration
+ * @param logger - Logger instance
+ * @returns Raw text response from Gemini
+ */
 export async function callGemini(
   messages: ProviderMessages,
   config: ResolvedCustomConfig,
   logger: Logger
 ): Promise<string> {
   try {
-    const { GoogleGenerativeAI, SchemaType } = await getGeminiModule();
-    const ai = new GoogleGenerativeAI(config.apiKey);
+    const { GoogleGenAI } = await import('@google/genai');
+    const ai = new GoogleGenAI({ apiKey: config.apiKey });
 
+    // Extract text from Gemini content format
     const textContent = messages.contents?.[0]?.parts?.[0]?.text ?? '';
 
     logger.debug('Calling Gemini API', {
@@ -35,29 +49,18 @@ export async function callGemini(
       maxTokens: config.maxTokens,
     });
 
-    const model = ai.getGenerativeModel({
+    const response = await ai.models.generateContent({
       model: config.model,
-      generationConfig: {
+      contents: textContent,
+      config: {
         temperature: config.temperature,
         maxOutputTokens: config.maxTokens,
         responseMimeType: 'application/json',
-        responseSchema: {
-          type: SchemaType.OBJECT,
-          properties: {
-            pass_weight: { type: SchemaType.NUMBER, description: 'Weight for pass decision (0-1)' },
-            block_weight: { type: SchemaType.NUMBER, description: 'Weight for block decision (0-1)' },
-            decision: { type: SchemaType.STRING, enum: ['pass', 'block'], description: 'The validation decision' },
-            reasoning: { type: SchemaType.STRING, description: 'Brief explanation of the decision' },
-          },
-          required: ['pass_weight', 'block_weight', 'decision', 'reasoning'],
-        },
+        responseSchema: RESPONSE_SCHEMA,
       },
     });
 
-    const result = await model.generateContent(textContent);
-    const response = result.response;
-
-    const text = response.text();
+    const text = response.text;
     if (!text) {
       throw new CustomError('Empty response from Gemini');
     }
@@ -74,3 +77,4 @@ export async function callGemini(
     );
   }
 }
+
