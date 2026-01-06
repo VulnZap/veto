@@ -23,7 +23,6 @@ export async function callAnthropic(
   logger: Logger
 ): Promise<string> {
   try {
-    // @ts-expect-error - Optional peer dependency
     const Anthropic = (await import('@anthropic-ai/sdk')).default;
     const client = new Anthropic({
       apiKey: config.apiKey,
@@ -38,7 +37,7 @@ export async function callAnthropic(
     const response = await client.messages.create({
       model: config.model,
       system: messages.system,
-      messages: messages.messages!,
+      messages: messages.messages as any,
       temperature: config.temperature,
       max_tokens: config.maxTokens,
     });
