@@ -215,6 +215,10 @@ export class Veto {
   // Loaded rules
   private readonly rules: LoadedRulesState;
 
+  private readonly rateLimitWindow = 60000;
+  private readonly rateLimitMax = 100;
+  private readonly rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
   private constructor(
     options: VetoOptions,
     config: VetoConfigFile,
@@ -499,10 +503,33 @@ export class Veto {
     return [...this.rules.globalRules, ...toolSpecific];
   }
 
+  private checkRateLimit(key: string): void {
+    const now = Date.now();
+    const entry = this.rateLimitMap.get(key);
+
+    if (!entry || now >= entry.resetAt) {
+      this.rateLimitMap.set(key, {
+        count: 1,
+        resetAt: now + this.rateLimitWindow,
+      });
+      return;
+    }
+
+    if (entry.count >= this.rateLimitMax) {
+      throw new Error(
+        `Rate limit exceeded: ${this.rateLimitMax} validations per ${this.rateLimitWindow / 1000}s`
+      );
+    }
+
+    entry.count++;
+  }
+
   /**
    * Validate a tool call with the external API.
    */
   private async validateWithAPI(context: ValidationContext): Promise<ValidationResult> {
+    this.checkRateLimit(`api:${context.toolName}`);
+
     const rules = this.getRulesForTool(context.toolName);
 
     // If no rules, allow by default
@@ -693,6 +720,8 @@ export class Veto {
    * Validate a tool call with the local kernel model.
    */
   private async validateWithKernel(context: ValidationContext): Promise<ValidationResult> {
+    this.checkRateLimit(`kernel:${context.toolName}`);
+
     const rules = this.getRulesForTool(context.toolName);
 
     // If no rules, allow by default
@@ -820,6 +849,8 @@ export class Veto {
    * Validate a tool call with the custom LLM provider.
    */
   private async validateWithCustom(context: ValidationContext): Promise<ValidationResult> {
+    this.checkRateLimit(`custom:${context.toolName}`);
+
     const rules = this.getRulesForTool(context.toolName);
 
     if (rules.length === 0) {

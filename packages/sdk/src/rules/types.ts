@@ -246,6 +246,44 @@ function assertStringArray(value: unknown, field: string, source: string): strin
   return value as string[];
 }
 
+/**
+ * Validate regex pattern for ReDoS vulnerabilities.
+ * Checks for dangerous patterns that can cause exponential backtracking.
+ */
+function validateRegexSafety(pattern: string, source: string): void {
+  // Check for dangerous nested quantifiers that can cause ReDoS
+  // These patterns look for quantifiers applied to groups/subpatterns that themselves contain quantifiers
+  const dangerousPatterns = [
+    /\([^)]*[*+][^)]*\)[*+{]/,       // (a+)+ or (a*)* or (a+){2,}
+    /\([^)]*[*+][^)]*\)\?[*+{]/,     // (a+)?+ or (a*)?*
+    /\([^)]*\{[^}]+\}[^)]*\)[*+{]/,  // (a{2,})+ or (a{1,})*
+  ];
+
+  for (const dangerous of dangerousPatterns) {
+    if (dangerous.test(pattern)) {
+      throw new RuleSchemaError(
+        `Potentially unsafe regex pattern in ${source}: "${pattern}" contains nested quantifiers that may cause ReDoS attacks`
+      );
+    }
+  }
+
+  // Validate that the pattern compiles
+  try {
+    new RegExp(pattern);
+  } catch (err) {
+    throw new RuleSchemaError(
+      `Invalid regex pattern in ${source}: "${pattern}" - ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  // Check pattern complexity (limit to 1000 characters)
+  if (pattern.length > 1000) {
+    throw new RuleSchemaError(
+      `Regex pattern too long in ${source}: ${pattern.length} characters (max 1000)`
+    );
+  }
+}
+
 function parseRuleCondition(data: unknown, source: string): RuleCondition {
   if (!isRecord(data)) {
     throw new RuleSchemaError(`Invalid condition in ${source}: expected object`);
@@ -262,6 +300,11 @@ function parseRuleCondition(data: unknown, source: string): RuleCondition {
 
   if (!Object.prototype.hasOwnProperty.call(data, 'value')) {
     throw new RuleSchemaError(`Missing value in ${source}`);
+  }
+
+  // Validate regex patterns for ReDoS vulnerabilities
+  if (operator === 'matches' && typeof data.value === 'string') {
+    validateRegexSafety(data.value, source);
   }
 
   return {
