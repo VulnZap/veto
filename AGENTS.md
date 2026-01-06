@@ -26,7 +26,9 @@ pnpm dev:web                 # Start landing page dev server
 - **TypeScript ESM**: Use `.js` extensions in imports (`import { x } from './foo.js'`)
 - **Types**: Explicit param/return types; use `type` imports for type-only
 - **Naming**: camelCase (functions/vars), PascalCase (types/classes), UPPER_SNAKE (constants)
-- **Errors**: Throw typed errors (`throw new ToolCallDeniedError(...)`)
+- **Errors**: Throw typed errors, never `process.exit()` in libraries
+  - SDK: `ToolCallDeniedError`, `RuleSchemaError`
+  - CLI: `CLIError`, `ConfigError`, `ValidationError`, `AgentError`, `NetworkError`
 - **Tests**: Vitest with `describe`/`it`/`expect`, pattern `test/*.test.ts` or `tests/*.test.ts`
 
 ## Branching & CI

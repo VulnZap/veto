@@ -6,7 +6,7 @@
 
 ```bash
 pnpm build                          # Build SDK
-pnpm test                           # Run all 142 tests
+pnpm test                           # Run all 145 tests
 pnpm test -- -t "validator"         # Run tests matching "validator"
 pnpm test -- tests/core/veto        # Run tests in specific file
 pnpm dev                            # Watch mode
@@ -29,7 +29,7 @@ src/
 │   └── adapters.ts          # toOpenAITools(), toAnthropicTools()
 ├── rules/                   # YAML rule system
 │   ├── loader.ts            # Load rules from veto/rules/*.yaml
-│   ├── types.ts             # Rule, RuleSet, Condition types
+│   ├── types.ts             # Rule, RuleSet, Condition types + RuleSchemaError
 │   └── rule-validator.ts    # Validate rule syntax
 ├── types/                   # Shared types
 │   ├── tool.ts              # ToolDefinition, ToolCall
@@ -58,10 +58,29 @@ import type { ToolDefinition } from '../types/tool.js';
 
 // Errors: typed, with context
 throw new ToolCallDeniedError(toolName, 'Blocked by rule: ' + rule.id);
+throw new RuleSchemaError('Invalid severity', filePath, 'rules[0].severity');
 
 // Async: always async/await, never .then()
 const result = await veto.validateToolCall(call);
 ```
+
+## Schema Validation
+
+Rule YAML files are strictly validated on load. Invalid files throw `RuleSchemaError` with clear messages:
+
+```typescript
+import { parseRuleSetStrict, RuleSchemaError } from 'veto-sdk';
+
+try {
+  const ruleSet = parseRuleSetStrict(yamlContent, 'path/to/file.yaml');
+} catch (err) {
+  if (err instanceof RuleSchemaError) {
+    console.error(err.message); // "Invalid severity in path/to/file.yaml.rules[0]: expected critical|high|medium|low|info"
+  }
+}
+```
+
+Validated fields: `id`, `name`, `action`, `severity`, `conditions`, `condition_groups`, `settings`
 
 ## Testing
 

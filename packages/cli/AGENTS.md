@@ -7,7 +7,7 @@
 ```bash
 pnpm build                          # Build TypeScript
 pnpm build:go                       # Build Go TUI binary
-pnpm test                           # Run all 243 tests
+pnpm test                           # Run all 258 tests
 pnpm test -- test/matcher           # Run tests in specific file
 pnpm test -- -t "policy"            # Run tests matching pattern
 pnpm dev                            # Run CLI directly with tsx
@@ -18,6 +18,7 @@ pnpm dev                            # Run CLI directly with tsx
 ```
 src/
 ├── cli.ts                   # ENTRY POINT - command dispatch
+├── errors.ts                # Structured error classes (CLIError, ConfigError, etc.)
 ├── config/                  # Configuration loading
 │   ├── loader.ts            # Find and load .veto files
 │   ├── veto-parser.ts       # Parse .veto policy syntax
@@ -80,11 +81,32 @@ deny exec curl* wget* nc*              # Block network tools
 | File | What It Does |
 |------|--------------|
 | `src/cli.ts` | Main entry, parses args, dispatches commands |
+| `src/errors.ts` | Structured error classes with exit codes |
 | `src/config/veto-parser.ts` | Parses `.veto` file format |
 | `src/compiler/builtins.ts` | 20+ built-in security policies |
 | `src/native/index.ts` | `installAgent()`, `detectInstalledAgents()` |
 | `src/native/claude-code.ts` | Claude Code specific integration |
 | `src/matcher.ts` | `isProtected()`, glob matching |
+
+## Error Handling
+
+CLI uses structured errors instead of `process.exit()` for testability:
+
+```typescript
+import { CLIError, ConfigError, ValidationError, AgentError } from './errors.js';
+
+// Throw instead of process.exit(1)
+if (!config) throw new ConfigError('Failed to load config');
+if (!agent) throw new ValidationError('No agent specified');
+
+// Main entry catches and exits with proper code
+main().catch((err) => {
+  console.error(err.message);
+  process.exit(err instanceof CLIError ? err.exitCode : 1);
+});
+```
+
+Error classes: `CLIError` (base), `ConfigError`, `NotFoundError`, `ValidationError`, `AgentError`, `NetworkError`
 
 ## Go TUI
 
