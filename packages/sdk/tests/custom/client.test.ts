@@ -93,7 +93,7 @@ That's my verdict.`;
       expect(result.block_weight).toBe(0.8);
     });
 
-    it('should throw CustomParseError when no JSON found', async () => {
+    it('should throw CustomError when no JSON found', async () => {
       const config: CustomConfig = {
         provider: 'openai',
         model: 'gpt-4o',
@@ -102,11 +102,11 @@ That's my verdict.`;
       const client = new CustomClient({ config, logger: mockLogger });
 
       expect(() => (client as any).parseResponse('No JSON here')).toThrow(
-        CustomParseError
+        CustomError
       );
     });
 
-    it('should throw CustomParseError for invalid JSON', async () => {
+    it('should throw CustomError for invalid JSON', async () => {
       const config: CustomConfig = {
         provider: 'openai',
         model: 'gpt-4o',
@@ -115,7 +115,7 @@ That's my verdict.`;
       const client = new CustomClient({ config, logger: mockLogger });
 
       expect(() => (client as any).parseResponse('{invalid json}')).toThrow(
-        CustomParseError
+        CustomError
       );
     });
 

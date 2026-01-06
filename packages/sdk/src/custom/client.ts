@@ -6,14 +6,15 @@
 
 import type { Logger } from '../utils/logger.js';
 import type { Rule } from '../rules/types.js';
+import { buildUserPrompt, buildProviderMessages } from './prompt.js';
+import { parseValidationResponse, ResponseParseError } from '../utils/response-parser.js';
 import type {
   CustomConfig,
-  CustomResponse,
   CustomToolCall,
+  CustomResponse,
   ResolvedCustomConfig,
 } from './types.js';
-import { CustomError, CustomParseError, resolveCustomConfig } from './types.js';
-import { buildUserPrompt, buildProviderMessages } from './prompt.js';
+import { CustomError, resolveCustomConfig } from './types.js';
 import { callOpenAI } from './providers/openai.js';
 import { callAnthropic } from './providers/anthropic.js';
 import { callGemini } from './providers/gemini.js';
@@ -64,7 +65,7 @@ export class CustomClient {
       const content = await this.callProvider(messages);
       return this.parseResponse(content);
     } catch (error) {
-      if (error instanceof CustomError || error instanceof CustomParseError) {
+      if (error instanceof CustomError) {
         throw error;
       }
 
@@ -99,57 +100,22 @@ export class CustomClient {
   private parseResponse(content: string): CustomResponse {
     this.logger.debug('Raw custom provider response:', { rawContent: content });
 
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new CustomParseError('No JSON found in response', content);
-    }
-
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      throw new CustomParseError('Invalid JSON in response', content);
-    }
+      const result = parseValidationResponse(content);
 
-    if (!parsed || typeof parsed !== 'object') {
-      throw new CustomParseError('Response is not an object', content);
-    }
+      this.logger.debug('Custom response parsed', {
+        decision: result.decision,
+        passWeight: result.pass_weight,
+        blockWeight: result.block_weight,
+      });
 
-    const response = parsed as Record<string, unknown>;
-
-    if (typeof response.pass_weight !== 'number') {
-      throw new CustomParseError('Missing or invalid pass_weight', content);
+      return result;
+    } catch (error) {
+      if (error instanceof ResponseParseError) {
+        throw new CustomError(error.message, error);
+      }
+      throw error;
     }
-    if (typeof response.block_weight !== 'number') {
-      throw new CustomParseError('Missing or invalid block_weight', content);
-    }
-    if (response.decision !== 'pass' && response.decision !== 'block') {
-      throw new CustomParseError('Missing or invalid decision', content);
-    }
-    if (typeof response.reasoning !== 'string') {
-      throw new CustomParseError('Missing or invalid reasoning', content);
-    }
-
-    const result: CustomResponse = {
-      pass_weight: response.pass_weight,
-      block_weight: response.block_weight,
-      decision: response.decision,
-      reasoning: response.reasoning,
-    };
-
-    if (Array.isArray(response.matched_rules)) {
-      result.matched_rules = response.matched_rules.filter(
-        (r): r is string => typeof r === 'string'
-      );
-    }
-
-    this.logger.debug('Custom response parsed', {
-      decision: result.decision,
-      passWeight: result.pass_weight,
-      blockWeight: result.block_weight,
-    });
-
-    return result;
   }
 
   /**

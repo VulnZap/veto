@@ -9,14 +9,15 @@
 
 import type { Logger } from '../utils/logger.js';
 import type { Rule } from '../rules/types.js';
+import { buildSystemPrompt, buildPrompt } from './prompt.js';
+import { parseValidationResponse, ResponseParseError } from '../utils/response-parser.js';
 import type {
   KernelConfig,
-  KernelResponse,
   KernelToolCall,
+  KernelResponse,
   ResolvedKernelConfig,
 } from './types.js';
-import { KernelError, KernelParseError, resolveKernelConfig } from './types.js';
-import { buildPrompt, buildSystemPrompt } from './prompt.js';
+import { KernelError, resolveKernelConfig } from './types.js';
 
 /**
  * Minimal OpenAI client interface for type safety without importing the full package.
@@ -137,7 +138,7 @@ export class KernelClient {
 
       return this.parseResponse(content);
     } catch (error) {
-      if (error instanceof KernelError || error instanceof KernelParseError) {
+      if (error instanceof KernelError) {
         throw error;
       }
 
@@ -152,59 +153,22 @@ export class KernelClient {
    * Parse the model response into a structured KernelResponse.
    */
   private parseResponse(content: string): KernelResponse {
-    // Extract JSON from response (model might include extra text)
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new KernelParseError('No JSON found in response', content);
-    }
-
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      throw new KernelParseError('Invalid JSON in response', content);
-    }
+      const result = parseValidationResponse(content);
 
-    // Validate required fields
-    if (!parsed || typeof parsed !== 'object') {
-      throw new KernelParseError('Response is not an object', content);
-    }
+      this.logger.debug('Kernel response parsed', {
+        decision: result.decision,
+        passWeight: result.pass_weight,
+        blockWeight: result.block_weight,
+      });
 
-    const response = parsed as Record<string, unknown>;
-
-    if (typeof response.pass_weight !== 'number') {
-      throw new KernelParseError('Missing or invalid pass_weight', content);
+      return result;
+    } catch (error) {
+      if (error instanceof ResponseParseError) {
+        throw new KernelError(error.message, error);
+      }
+      throw error;
     }
-    if (typeof response.block_weight !== 'number') {
-      throw new KernelParseError('Missing or invalid block_weight', content);
-    }
-    if (response.decision !== 'pass' && response.decision !== 'block') {
-      throw new KernelParseError('Missing or invalid decision', content);
-    }
-    if (typeof response.reasoning !== 'string') {
-      throw new KernelParseError('Missing or invalid reasoning', content);
-    }
-
-    const result: KernelResponse = {
-      pass_weight: response.pass_weight,
-      block_weight: response.block_weight,
-      decision: response.decision,
-      reasoning: response.reasoning,
-    };
-
-    if (Array.isArray(response.matched_rules)) {
-      result.matched_rules = response.matched_rules.filter(
-        (r): r is string => typeof r === 'string'
-      );
-    }
-
-    this.logger.debug('Kernel response parsed', {
-      decision: result.decision,
-      passWeight: result.pass_weight,
-      blockWeight: result.block_weight,
-    });
-
-    return result;
   }
 
   /**

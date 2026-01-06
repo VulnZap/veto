@@ -142,7 +142,7 @@ describe('KernelClient', () => {
       expect(result.decision).toBe('block');
     });
 
-    it('should throw KernelParseError when response has no JSON', async () => {
+    it('should throw KernelError when response has no JSON', async () => {
       const mockCreate = vi.fn().mockResolvedValue({
         choices: [{ message: { content: 'I cannot evaluate this request.' } }],
       });
@@ -154,10 +154,10 @@ describe('KernelClient', () => {
       });
 
       await expect(client.evaluate(sampleToolCall, sampleRules))
-        .rejects.toThrow(KernelParseError);
+        .rejects.toThrow(KernelError);
     });
 
-    it('should throw KernelParseError when JSON is invalid', async () => {
+    it('should throw KernelError when JSON is invalid', async () => {
       const mockCreate = vi.fn().mockResolvedValue({
         choices: [{ message: { content: '{"pass_weight": "not a number"}' } }],
       });
@@ -169,7 +169,7 @@ describe('KernelClient', () => {
       });
 
       await expect(client.evaluate(sampleToolCall, sampleRules))
-        .rejects.toThrow(KernelParseError);
+        .rejects.toThrow(KernelError);
     });
 
     it('should throw KernelError when API call fails', async () => {
