@@ -9,16 +9,22 @@ import type { ResolvedCustomConfig } from '../types.js';
 import type { ProviderMessages } from '../prompt.js';
 import { CustomError } from '../types.js';
 
-/**
- * Call OpenAI API with the given prompt.
- */
+let OpenAIClass: typeof import('openai').default | null = null;
+
+async function getOpenAIClass(): Promise<typeof import('openai').default> {
+  if (!OpenAIClass) {
+    OpenAIClass = (await import('openai')).default;
+  }
+  return OpenAIClass;
+}
+
 export async function callOpenAI(
   messages: ProviderMessages,
   config: ResolvedCustomConfig,
   logger: Logger
 ): Promise<string> {
   try {
-    const OpenAI = (await import('openai')).default;
+    const OpenAI = await getOpenAIClass();
     const client = new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseUrl,

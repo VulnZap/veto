@@ -9,16 +9,22 @@ import type { ResolvedCustomConfig } from '../types.js';
 import type { ProviderMessages } from '../prompt.js';
 import { CustomError } from '../types.js';
 
-/**
- * Call Google Gemini API with the given prompt.
- */
+let GeminiModule: typeof import('@google/generative-ai') | null = null;
+
+async function getGeminiModule(): Promise<typeof import('@google/generative-ai')> {
+  if (!GeminiModule) {
+    GeminiModule = await import('@google/generative-ai');
+  }
+  return GeminiModule;
+}
+
 export async function callGemini(
   messages: ProviderMessages,
   config: ResolvedCustomConfig,
   logger: Logger
 ): Promise<string> {
   try {
-    const { GoogleGenerativeAI, SchemaType } = await import('@google/generative-ai');
+    const { GoogleGenerativeAI, SchemaType } = await getGeminiModule();
     const ai = new GoogleGenerativeAI(config.apiKey);
 
     const textContent = messages.contents?.[0]?.parts?.[0]?.text ?? '';

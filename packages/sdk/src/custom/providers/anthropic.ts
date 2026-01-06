@@ -9,16 +9,22 @@ import type { ResolvedCustomConfig } from '../types.js';
 import type { ProviderMessages } from '../prompt.js';
 import { CustomError } from '../types.js';
 
-/**
- * Call Anthropic API with the given prompt.
- */
+let AnthropicClass: typeof import('@anthropic-ai/sdk').default | null = null;
+
+async function getAnthropicClass(): Promise<typeof import('@anthropic-ai/sdk').default> {
+  if (!AnthropicClass) {
+    AnthropicClass = (await import('@anthropic-ai/sdk')).default;
+  }
+  return AnthropicClass;
+}
+
 export async function callAnthropic(
   messages: ProviderMessages,
   config: ResolvedCustomConfig,
   logger: Logger
 ): Promise<string> {
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const Anthropic = await getAnthropicClass();
     const client = new Anthropic({
       apiKey: config.apiKey,
     });
