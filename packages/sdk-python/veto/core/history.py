@@ -6,7 +6,7 @@ providing context to validators about previous calls.
 """
 
 from typing import Any, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 from veto.types.config import (

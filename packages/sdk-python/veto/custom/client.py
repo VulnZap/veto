@@ -2,7 +2,7 @@
 Custom LLM provider client for validation.
 """
 
-from typing import Any, Optional
+from typing import Any
 from dataclasses import dataclass
 import json
 import re
@@ -13,7 +13,6 @@ from veto.custom.types import (
     CustomConfig,
     CustomResponse,
     CustomToolCall,
-    ResolvedCustomConfig,
     CustomError,
     CustomParseError,
     resolve_custom_config,

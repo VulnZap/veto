@@ -1,7 +1,0 @@
-# Veto DevOps Demo Requirements
-
-# Install veto with Gemini support
--e ..[gemini]
-
-# Environment variable loading
-python-dotenv>=1.0.0

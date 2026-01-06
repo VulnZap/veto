@@ -45,7 +45,6 @@ from veto.core.interceptor import (
 )
 from veto.rules.types import (
     Rule,
-    RuleSet,
     RuleCondition,
     ToolCallContext,
     ToolCallHistorySummary,
@@ -858,9 +857,6 @@ class Veto:
         """
         tool_name = tool.name
         veto = self
-
-        # Get the tool as a dict-like object for attribute access
-        tool_dict = tool.__dict__ if hasattr(tool, "__dict__") else {}
 
         # For LangChain tools, we need to wrap the 'func' property
         if hasattr(tool, "func") and callable(getattr(tool, "func")):

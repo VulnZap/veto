@@ -5,7 +5,7 @@ These adapters enable Veto to work transparently with different AI providers
 while maintaining a consistent internal representation.
 """
 
-from typing import Any, Callable, Generic, TypeVar, Union
+from typing import Callable, Generic, TypeVar, Union
 from dataclasses import dataclass
 import json
 
@@ -15,7 +15,6 @@ from veto.providers.types import (
     OpenAITool,
     OpenAIToolCall,
     OpenAIFunctionDefinition,
-    OpenAIToolCallFunction,
     AnthropicTool,
     AnthropicToolUse,
     GoogleTool,

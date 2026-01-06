@@ -9,8 +9,6 @@ from typing import (
     Optional,
     Union,
     Awaitable,
-    Protocol,
-    runtime_checkable,
     TYPE_CHECKING,
 )
 from dataclasses import dataclass, field
