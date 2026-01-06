@@ -18,6 +18,7 @@ import {
 } from './native/index.js';
 import { startWatchdog, stopWatchdog } from './watchdog/index.js';
 import { runSync } from './commands/sync.js';
+import { CLIError, ValidationError, ConfigError, AgentError } from './errors.js';
 
 import {
   findVetoConfig,
@@ -111,7 +112,7 @@ async function runWrapper(agent: string, restriction: string) {
     );
     console.log('Usage: veto <agent> "<restriction>"\n');
     console.log("Example: veto cc \"don't delete test files\"");
-    process.exit(1);
+    throw new ValidationError('No restriction provided');
   }
 
   // Check for API key (only needed if not using builtins)
@@ -134,13 +135,13 @@ async function runWrapper(agent: string, restriction: string) {
       console.log('  https://aistudio.google.com/apikey\n');
       console.log('  Then run:');
       console.log('  export GEMINI_API_KEY="your-key"\n');
-      process.exit(1);
+      throw new ConfigError('GEMINI_API_KEY not set');
     }
     console.error(
       `${COLORS.error}${SYMBOLS.error} Error: Failed to compile restriction${COLORS.reset}\n`
     );
     console.log(`  ${(err as Error).message}\n`);
-    process.exit(1);
+    throw new CLIError('Failed to compile restriction');
   }
 
   // Print startup message
@@ -224,7 +225,7 @@ async function runExplain(restriction: string) {
     console.error(
       `${COLORS.error}${SYMBOLS.error} Error: No restriction provided${COLORS.reset}`
     );
-    process.exit(1);
+    throw new ValidationError('No restriction provided');
   }
 
   const spinner = createSpinner('Analyzing restriction...');
@@ -240,7 +241,7 @@ async function runExplain(restriction: string) {
         `${COLORS.error}${SYMBOLS.error} Error: GEMINI_API_KEY not set${COLORS.reset}\n`
       );
       console.log('  Get a free API key: https://aistudio.google.com/apikey\n');
-      process.exit(1);
+      throw new ConfigError('GEMINI_API_KEY not set');
     }
     throw err;
   }
@@ -297,7 +298,7 @@ async function runWatchdog(restriction: string) {
     console.error(
       `${COLORS.error}${SYMBOLS.error} Error: No restriction provided${COLORS.reset}`
     );
-    process.exit(1);
+    throw new ValidationError('No restriction provided');
   }
 
   // Compile restriction
@@ -314,7 +315,7 @@ async function runWatchdog(restriction: string) {
         `${COLORS.error}${SYMBOLS.error} Error: GEMINI_API_KEY not set${COLORS.reset}\n`
       );
       console.log('  Get a free API key: https://aistudio.google.com/apikey\n');
-      process.exit(1);
+      throw new ConfigError('GEMINI_API_KEY not set');
     }
     throw err;
   }
@@ -396,7 +397,7 @@ async function runInstall(agent: string) {
       console.log(`  ${COLORS.dim}${a.aliases[0].padEnd(12)}${COLORS.reset} ${a.name} (${status})`);
     }
     console.log('');
-    process.exit(1);
+    throw new ValidationError('No agent specified');
   }
 
   const isGlobal = agent.endsWith('-global');
@@ -404,7 +405,7 @@ async function runInstall(agent: string) {
   
   const success = await installAgent(agentId, { global: isGlobal });
   if (!success) {
-    process.exit(1);
+    throw new AgentError(`Failed to install agent: ${agentId}`);
   }
 }
 
@@ -434,7 +435,7 @@ async function runAdd(restrictions: string[]) {
     );
     console.log(`\nUsage: veto add "policy1" "policy2" ...`);
     console.log(`Example: veto add "protect .env" "no console.log"`);
-    process.exit(1);
+    throw new ValidationError('No restriction provided');
   }
 
   const spinner = createSpinner(`Compiling ${policies.length} ${policies.length === 1 ? 'policy' : 'policies'}...`);
@@ -464,7 +465,7 @@ async function runAdd(restrictions: string[]) {
           `${COLORS.error}${SYMBOLS.error} Error: GEMINI_API_KEY not set${COLORS.reset}\n`
         );
         console.log('  Get a free API key: https://aistudio.google.com/apikey\n');
-        process.exit(1);
+        throw new ConfigError('GEMINI_API_KEY not set');
       }
       failed.push({ restriction: policies[i], error: errMsg });
     }
@@ -517,19 +518,19 @@ function runRemove(target: string) {
     console.error(`${COLORS.error}${SYMBOLS.error} Specify policy to remove${COLORS.reset}`);
     console.log(`${COLORS.dim}Usage: veto remove <number> or veto remove "<name>"${COLORS.reset}`);
     console.log(`${COLORS.dim}Run 'veto list' to see policies${COLORS.reset}`);
-    process.exit(1);
+    throw new ValidationError('No policy specified');
   }
   
   const success = removePolicy(target.trim());
   if (!success) {
-    process.exit(1);
+    throw new CLIError('Failed to remove policy');
   }
 }
 
 async function runUninstall(agent: string) {
   if (!agent) {
     console.error(`${COLORS.error}${SYMBOLS.error} No agent specified${COLORS.reset}`);
-    process.exit(1);
+    throw new ValidationError('No agent specified');
   }
 
   const isGlobal = agent.endsWith('-global');
@@ -537,7 +538,7 @@ async function runUninstall(agent: string) {
   
   const success = await uninstallAgent(agentId, { global: isGlobal });
   if (!success) {
-    process.exit(1);
+    throw new AgentError(`Failed to uninstall agent: ${agentId}`);
   }
 }
 
@@ -620,5 +621,8 @@ main().catch((err) => {
   console.error(
     `${COLORS.error}${SYMBOLS.error} Error: ${err.message}${COLORS.reset}`
   );
-  process.exit(1);
+  
+  // Use exit code from CLIError if available, otherwise default to 1
+  const exitCode = err instanceof CLIError ? err.exitCode : 1;
+  process.exit(exitCode);
 });

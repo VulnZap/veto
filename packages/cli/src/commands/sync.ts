@@ -8,6 +8,7 @@ import {
   addPolicyToAgents,
 } from '../native/index.js';
 import { COLORS, SYMBOLS } from '../ui/colors.js';
+import { NotFoundError, ConfigError } from '../errors.js';
 
 export async function runSync(agent?: string) {
   const configPath = findVetoConfig();
@@ -15,12 +16,12 @@ export async function runSync(agent?: string) {
   if (!configPath) {
     console.error(`${COLORS.error}${SYMBOLS.error} No .veto config found${COLORS.reset}`);
     console.log(`Run: ${COLORS.dim}veto init${COLORS.reset}`);
-    process.exit(1);
+    throw new NotFoundError('No .veto config found');
   }
 
   const config = loadVetoConfig(configPath);
   if (!config) {
-    process.exit(1);
+    throw new ConfigError('Failed to load .veto config');
   }
 
   console.log(`\n${COLORS.info}Loading ${configPath}...${COLORS.reset}`);

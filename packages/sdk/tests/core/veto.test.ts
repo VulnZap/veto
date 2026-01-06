@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Veto, ToolCallDeniedError } from '../../src/core/veto.js';
+import { RuleSchemaError } from '../../src/rules/types.js';
 import type { ToolDefinition, ToolCall } from '../../src/types/tool.js';
 
 const TEST_DIR = '/tmp/veto-test-' + Date.now();
@@ -174,6 +175,64 @@ rules:
       const veto = await Veto.init({ configDir: VETO_DIR, mode: 'log' });
 
       expect(veto.getMode()).toBe('log');
+    });
+
+    it('should throw RuleSchemaError for invalid rule YAML', async () => {
+      writeFileSync(
+        join(RULES_DIR, 'invalid.yaml'),
+        `
+rules:
+  - id: invalid-rule
+    name: Invalid Rule
+    enabled: true
+    severity: invalid_severity
+    action: block
+`,
+        'utf-8'
+      );
+
+      await expect(Veto.init({ configDir: VETO_DIR })).rejects.toThrow(
+        'Invalid severity'
+      );
+    });
+
+    it('should throw RuleSchemaError for missing required fields', async () => {
+      writeFileSync(
+        join(RULES_DIR, 'missing-fields.yaml'),
+        `
+rules:
+  - name: Missing ID Rule
+    enabled: true
+`,
+        'utf-8'
+      );
+
+      await expect(Veto.init({ configDir: VETO_DIR })).rejects.toThrow(
+        'Invalid id'
+      );
+    });
+
+    it('should throw RuleSchemaError for invalid condition operator', async () => {
+      writeFileSync(
+        join(RULES_DIR, 'invalid-operator.yaml'),
+        `
+rules:
+  - id: invalid-operator-rule
+    name: Invalid Operator Rule
+    enabled: true
+    severity: high
+    action: block
+    conditions:
+      - field: arguments.path
+        operator: invalid_operator
+        value: /etc
+`,
+        'utf-8'
+      );
+
+      await expect(Veto.init({ configDir: VETO_DIR })).rejects.toThrow(
+        'Invalid operator'
+      );
     });
   });
 

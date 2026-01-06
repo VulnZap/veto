@@ -29,11 +29,11 @@ import { HistoryTracker, type HistoryStats } from './history.js';
 import { Interceptor, ToolCallDeniedError, type InterceptionResult } from './interceptor.js';
 import type {
   Rule,
-  RuleSet,
   ToolCallContext,
   ToolCallHistorySummary,
   ValidationAPIResponse,
 } from '../rules/types.js';
+import { parseRuleSetStrict, RuleSchemaError } from '../rules/types.js';
 import type { KernelConfig, KernelToolCall } from '../kernel/types.js';
 import { KernelClient } from '../kernel/client.js';
 
@@ -369,20 +369,11 @@ export class Veto {
     for (const filePath of yamlFiles) {
       try {
         const content = readFileSync(filePath, 'utf-8');
-        const parsed = parseYaml(content) as RuleSet | Rule[] | Record<string, unknown>;
+        const parsed = parseYaml(content);
 
-        let rules: Rule[] = [];
+        const ruleSet = parseRuleSetStrict(parsed, filePath);
 
-        if (Array.isArray(parsed)) {
-          rules = parsed as Rule[];
-        } else if (parsed && typeof parsed === 'object' && 'rules' in parsed) {
-          rules = (parsed as RuleSet).rules ?? [];
-        } else if (parsed && typeof parsed === 'object' && 'id' in parsed) {
-          rules = [parsed as unknown as Rule];
-        }
-
-        // Process and index rules
-        for (const rule of rules) {
+        for (const rule of ruleSet.rules) {
           if (!rule.enabled) continue;
 
           state.allRules.push(rule);
@@ -400,9 +391,12 @@ export class Veto {
 
         logger.debug('Loaded rules from file', {
           path: filePath,
-          count: rules.length,
+          count: ruleSet.rules.length,
         });
       } catch (error) {
+        if (error instanceof RuleSchemaError) {
+          throw error;
+        }
         logger.error(
           'Failed to load rules file',
           { path: filePath },
