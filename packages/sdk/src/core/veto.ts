@@ -1101,28 +1101,67 @@ export class Veto {
   }
 
   /**
-   * Wrap a single tool with Veto validation (provider-agnostic).
-   *
-   * @param tool - The tool to wrap
-   * @returns The same tool with Veto validation injected
+   * Check if a tool is a LangChain tool (has 'func' property).
    */
-  wrapTool<T extends { name: string }>(tool: T): T {
+  private isLangChainTool(tool: Record<string, unknown>): boolean {
+    return typeof tool.func === 'function';
+  }
+
+  /**
+   * Create a shallow clone of a tool that inherits from the original prototype.
+   */
+  private cloneTool<T>(tool: T): T {
+    const wrapped = Object.create(Object.getPrototypeOf(tool));
+    Object.assign(wrapped, tool);
+    return wrapped as T;
+  }
+
+  /**
+   * Validate and execute a tool call, throwing if denied.
+   */
+  private async validateAndExecute(
+    toolName: string,
+    args: Record<string, unknown>,
+    originalFunc: (input: Record<string, unknown>) => unknown,
+    context: unknown
+  ): Promise<unknown> {
+    const result = await this.validateToolCall({
+      id: generateToolCallId(),
+      name: toolName,
+      arguments: args,
+    });
+
+    if (!result.allowed) {
+      throw new ToolCallDeniedError(
+        toolName,
+        result.originalCall.id || '',
+        result.validationResult
+      );
+    }
+
+    const finalArgs = result.finalArguments ?? args;
+    return originalFunc.call(context, finalArgs);
+  }
+
+  /**
+   * Wrap a LangChain tool (has 'func' and optionally 'invoke' properties).
+   */
+  private wrapLangChainTool<T extends { name: string }>(tool: T): T {
     const toolName = tool.name;
     const toolAny = tool as Record<string, unknown>;
-    const veto = this;
+    const originalFunc = toolAny.func as (input: Record<string, unknown>) => unknown;
 
-    // For LangChain tools, we need to wrap the 'func' property
-    // and also override 'invoke' to ensure validation happens
-    if (typeof toolAny.func === 'function') {
-      const originalFunc = toolAny.func as (input: Record<string, unknown>) => unknown;
+    const wrapped = this.cloneTool(tool);
+    const wrappedAny = wrapped as Record<string, unknown>;
 
-      // Create a new object that inherits from the original
-      const wrapped = Object.create(Object.getPrototypeOf(tool));
-      Object.assign(wrapped, tool);
+    wrappedAny.func = async (input: Record<string, unknown>): Promise<unknown> => {
+      return this.validateAndExecute(toolName, input, originalFunc, tool);
+    };
 
-      // Create wrapped func that validates before executing
-      const wrappedFunc = async (input: Record<string, unknown>): Promise<unknown> => {
-        const result = await veto.validateToolCall({
+    if (typeof toolAny.invoke === 'function') {
+      const originalInvoke = toolAny.invoke as (...args: unknown[]) => Promise<unknown>;
+      wrappedAny.invoke = async (input: Record<string, unknown>, ...rest: unknown[]): Promise<unknown> => {
+        const result = await this.validateToolCall({
           id: generateToolCallId(),
           name: toolName,
           arguments: input,
@@ -1137,57 +1176,60 @@ export class Veto {
         }
 
         const finalArgs = result.finalArguments ?? input;
-        return originalFunc.call(tool, finalArgs);
+        return originalInvoke.call(tool, finalArgs, ...rest);
       };
-
-      wrapped.func = wrappedFunc;
-
-      // Override invoke to use our wrapped func
-      if (typeof toolAny.invoke === 'function') {
-        const originalInvoke = toolAny.invoke as (...args: unknown[]) => Promise<unknown>;
-        wrapped.invoke = async function (input: Record<string, unknown>, ...rest: unknown[]): Promise<unknown> {
-          const result = await veto.validateToolCall({
-            id: generateToolCallId(),
-            name: toolName,
-            arguments: input,
-          });
-
-          if (!result.allowed) {
-            throw new ToolCallDeniedError(
-              toolName,
-              result.originalCall.id || '',
-              result.validationResult
-            );
-          }
-
-          const finalArgs = result.finalArguments ?? input;
-          return originalInvoke.call(tool, finalArgs, ...rest);
-        };
-      }
-
-      veto.logger.debug('Tool wrapped', { name: toolName });
-      return wrapped as T;
     }
 
-    // Fallback for other tool types (handler, run, execute, etc.)
+    this.logger.debug('LangChain tool wrapped', { name: toolName });
+    return wrapped;
+  }
+
+  /**
+   * Normalize function arguments to a Record format.
+   */
+  private normalizeArgs(args: unknown[]): Record<string, unknown> {
+    if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
+      return args[0] as Record<string, unknown>;
+    }
+    return { args };
+  }
+
+  /**
+   * Apply final arguments to the original function.
+   */
+  private applyFinalArgs(
+    originalFunc: (...args: unknown[]) => unknown,
+    context: unknown,
+    originalArgs: unknown[],
+    finalArgs: Record<string, unknown>
+  ): unknown {
+    if (originalArgs.length === 1 && typeof originalArgs[0] === 'object') {
+      return originalFunc.call(context, finalArgs);
+    }
+    if (finalArgs.args && Array.isArray(finalArgs.args)) {
+      return originalFunc.apply(context, finalArgs.args as unknown[]);
+    }
+    return originalFunc.apply(context, originalArgs);
+  }
+
+  /**
+   * Wrap a generic tool (has handler, run, execute, call, or _call property).
+   */
+  private wrapGenericTool<T extends { name: string }>(tool: T): T | null {
+    const toolName = tool.name;
+    const toolAny = tool as Record<string, unknown>;
     const execFunctionKeys = ['handler', 'run', 'execute', 'call', '_call'];
 
     for (const key of execFunctionKeys) {
       if (typeof toolAny[key] === 'function') {
         const originalFunc = toolAny[key] as (...args: unknown[]) => unknown;
+        const wrapped = this.cloneTool(tool);
+        const wrappedAny = wrapped as Record<string, unknown>;
 
-        const wrapped = Object.create(Object.getPrototypeOf(tool));
-        Object.assign(wrapped, tool);
+        wrappedAny[key] = async (...args: unknown[]): Promise<unknown> => {
+          const callArgs = this.normalizeArgs(args);
 
-        const wrappedFunc = async (...args: unknown[]): Promise<unknown> => {
-          let callArgs: Record<string, unknown>;
-          if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
-            callArgs = args[0] as Record<string, unknown>;
-          } else {
-            callArgs = { args };
-          }
-
-          const result = await veto.validateToolCall({
+          const result = await this.validateToolCall({
             id: generateToolCallId(),
             name: toolName,
             arguments: callArgs,
@@ -1202,24 +1244,36 @@ export class Veto {
           }
 
           const finalArgs = result.finalArguments ?? callArgs;
-          if (args.length === 1 && typeof args[0] === 'object') {
-            return originalFunc.call(tool, finalArgs);
-          }
-          // For positional args, check if finalArgs contains modified 'args' array
-          if (finalArgs.args && Array.isArray(finalArgs.args)) {
-            return originalFunc.apply(tool, finalArgs.args as unknown[]);
-          }
-          return originalFunc.apply(tool, args);
+          return this.applyFinalArgs(originalFunc, tool, args, finalArgs);
         };
 
-        wrapped[key] = wrappedFunc;
-        veto.logger.debug('Tool wrapped', { name: toolName });
-        return wrapped as T;
+        this.logger.debug('Generic tool wrapped', { name: toolName, key });
+        return wrapped;
       }
     }
 
-    // No wrappable function found, return as-is
-    veto.logger.warn('No wrappable function found on tool', { name: toolName });
+    return null;
+  }
+
+  /**
+   * Wrap a single tool with Veto validation (provider-agnostic).
+   *
+   * @param tool - The tool to wrap
+   * @returns The same tool with Veto validation injected
+   */
+  wrapTool<T extends { name: string }>(tool: T): T {
+    const toolAny = tool as Record<string, unknown>;
+
+    if (this.isLangChainTool(toolAny)) {
+      return this.wrapLangChainTool(tool);
+    }
+
+    const wrapped = this.wrapGenericTool(tool);
+    if (wrapped) {
+      return wrapped;
+    }
+
+    this.logger.warn('No wrappable function found on tool', { name: tool.name });
     return tool;
   }
 
