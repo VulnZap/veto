@@ -206,10 +206,12 @@ export class Veto {
 
   // Kernel client (lazy initialized or injected)
   private kernelClient: KernelClient | null = null;
+  private kernelClientPromise: Promise<KernelClient> | null = null;
   private readonly kernelConfig: KernelConfig | null;
 
   // Custom client (lazy initialized)
   private customClient: CustomClient | null = null;
+  private customClientPromise: Promise<CustomClient> | null = null;
   private readonly customConfig: CustomConfig | null;
 
   // Loaded rules
@@ -699,21 +701,28 @@ export class Veto {
   /**
    * Get or create the kernel client.
    */
-  private getKernelClient(): KernelClient {
+  private async getKernelClient(): Promise<KernelClient> {
     if (this.kernelClient) {
       return this.kernelClient;
+    }
+
+    if (this.kernelClientPromise) {
+      return this.kernelClientPromise;
     }
 
     if (!this.kernelConfig) {
       throw new Error('Kernel configuration not available');
     }
 
-    this.kernelClient = new KernelClient({
-      config: this.kernelConfig,
-      logger: this.logger,
+    this.kernelClientPromise = Promise.resolve().then(() => {
+      this.kernelClient = new KernelClient({
+        config: this.kernelConfig!,
+        logger: this.logger,
+      });
+      return this.kernelClient;
     });
 
-    return this.kernelClient;
+    return this.kernelClientPromise;
   }
 
   /**
@@ -736,7 +745,7 @@ export class Veto {
     };
 
     try {
-      const kernelClient = this.getKernelClient();
+      const kernelClient = await this.getKernelClient();
       const response = await kernelClient.evaluate(toolCall, rules);
 
       return this.handleKernelResponse(response, context);
@@ -826,9 +835,13 @@ export class Veto {
   /**
    * Get or create the custom client.
    */
-  private getCustomClient(): CustomClient {
+  private async getCustomClient(): Promise<CustomClient> {
     if (this.customClient) {
       return this.customClient;
+    }
+
+    if (this.customClientPromise) {
+      return this.customClientPromise;
     }
 
     if (!this.customConfig) {
@@ -837,12 +850,15 @@ export class Veto {
       );
     }
 
-    this.customClient = new CustomClient({
-      config: this.customConfig,
-      logger: this.logger,
+    this.customClientPromise = Promise.resolve().then(() => {
+      this.customClient = new CustomClient({
+        config: this.customConfig!,
+        logger: this.logger,
+      });
+      return this.customClient;
     });
 
-    return this.customClient;
+    return this.customClientPromise;
   }
 
   /**
@@ -864,7 +880,7 @@ export class Veto {
     };
 
     try {
-      const customClient = this.getCustomClient();
+      const customClient = await this.getCustomClient();
       const response = await customClient.evaluate(toolCall, rules);
 
       return this.handleCustomResponse(response, context);
