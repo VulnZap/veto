@@ -24,7 +24,8 @@
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --fix",
-    "*.{json,md,yml,yaml}": "prettier --write --ignore-unknown"
+    "*.{json,md,yml,yaml}": "prettier --write --ignore-unknown",
+    "packages/sdk-python/**/*.py": "ruff check --fix"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",

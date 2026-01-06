@@ -85,11 +85,11 @@ jobs:
 
       - name: Lint
         working-directory: packages/sdk-python
-        run: ruff check src
+        run: ruff check veto
 
       - name: Typecheck
         working-directory: packages/sdk-python
-        run: mypy src --ignore-missing-imports
+        run: mypy veto --ignore-missing-imports
 
       - name: Test
         working-directory: packages/sdk-python
