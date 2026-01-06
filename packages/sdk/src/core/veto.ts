@@ -1255,14 +1255,44 @@ export class Veto {
   }
 
   /**
-   * Get registered tools.
+   * Get all registered tools.
+   *
+   * Returns an array of tool definitions that have been registered with Veto
+   * via wrapTools(), wrap(), or wrapTool(). This is useful for inspecting
+   * which tools are currently being validated.
+   *
+   * @returns Array of tool definitions
+   *
+   * @example
+   * ```typescript
+   * const veto = await Veto.init();
+   * veto.wrapTools(myTools);
+   * const registered = veto.getRegisteredTools();
+   * console.log(`Registered ${registered.length} tools`);
+   * ```
    */
   getRegisteredTools(): readonly ToolDefinition[] {
     return Array.from(this.registeredTools.values());
   }
 
   /**
-   * Get loaded rules.
+   * Get all loaded rules.
+   *
+   * Returns an array of all rules that were loaded from the veto/rules directory.
+   * This includes both global rules (apply to all tools) and tool-specific rules.
+   * Useful for debugging rule configuration or displaying active rules to users.
+   *
+   * @returns Array of all loaded rules
+   *
+   * @example
+   * ```typescript
+   * const veto = await Veto.init();
+   * const rules = veto.getLoadedRules();
+   * console.log(`Loaded ${rules.length} rules`);
+   * rules.forEach(rule => {
+   *   console.log(`- ${rule.name} (${rule.severity})`);
+   * });
+   * ```
    */
   getLoadedRules(): readonly Rule[] {
     return this.rules.allRules;
@@ -1270,13 +1300,42 @@ export class Veto {
 
   /**
    * Get current operating mode.
+   *
+   * Returns the current mode that determines how Veto handles validation failures:
+   * - "strict": Blocks tool calls when validation fails (production mode)
+   * - "log": Only logs validation failures, allows all calls (development mode)
+   *
+   * The mode can be set via VetoOptions when initializing or in veto.config.yaml.
+   *
+   * @returns Current operating mode
+   *
+   * @example
+   * ```typescript
+   * const veto = await Veto.init({ mode: 'log' });
+   * console.log(veto.getMode()); // 'log'
+   * ```
    */
   getMode(): VetoMode {
     return this.mode;
   }
 
   /**
-   * Get current validation mode (api or kernel).
+   * Get current validation mode.
+   *
+   * Returns the validation mode that determines how tool calls are validated:
+   * - "api": Validate via external HTTP API (default)
+   * - "kernel": Validate via local Ollama model
+   * - "custom": Validate via custom LLM provider (OpenAI, Anthropic, Gemini, OpenRouter)
+   *
+   * The validation mode is configured in veto.config.yaml under validation.mode.
+   *
+   * @returns Current validation mode
+   *
+   * @example
+   * ```typescript
+   * const veto = await Veto.init();
+   * console.log(veto.getValidationMode()); // 'api'
+   * ```
    */
   getValidationMode(): ValidationMode {
     return this.validationMode;
