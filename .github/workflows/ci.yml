@@ -45,6 +45,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter veto-sdk build
+      - run: pnpm --filter veto-sdk exec tsc --noEmit
       - run: pnpm --filter veto-sdk test
 
   # CLI tests - only runs if CLI changed
@@ -61,6 +62,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter veto-cli build
+      - run: pnpm --filter veto-cli typecheck
       - run: pnpm --filter veto-cli test
 
   # Web build - only runs if web changed
@@ -77,6 +79,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @veto/web build
+      - run: pnpm --filter @veto/web exec tsc --noEmit
 
   # Go TUI build (CLI native binary)
   go:
