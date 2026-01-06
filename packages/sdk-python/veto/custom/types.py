@@ -134,11 +134,11 @@ def resolve_custom_config(config: CustomConfig) -> ResolvedCustomConfig:
         temperature=config.temperature
         if config.temperature is not None
         else CUSTOM_DEFAULTS["temperature"],
-        max_tokens=config.max_tokens
+        max_tokens=int(config.max_tokens
         if config.max_tokens is not None
-        else CUSTOM_DEFAULTS["max_tokens"],
-        timeout=config.timeout
+        else CUSTOM_DEFAULTS["max_tokens"]),
+        timeout=int(config.timeout
         if config.timeout is not None
-        else CUSTOM_DEFAULTS["timeout"],
+        else CUSTOM_DEFAULTS["timeout"]),
         base_url=config.base_url or PROVIDER_BASE_URLS[config.provider],
     )

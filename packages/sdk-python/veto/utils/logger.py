@@ -5,7 +5,7 @@ Provides a flexible logging system with configurable log levels
 and support for custom logger implementations.
 """
 
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -228,7 +228,7 @@ class MemoryLogger:
 
 def create_memory_logger(
     level: LogLevel = "debug",
-) -> tuple[Logger, list[LogEntry], callable]:
+) -> tuple[Logger, list[LogEntry], Callable[[], None]]:
     """
     Create a logger that stores entries in memory.
 

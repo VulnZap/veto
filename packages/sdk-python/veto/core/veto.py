@@ -280,7 +280,11 @@ class Veto:
 
         # Determine log level
         env_log_level = os.environ.get("VETO_LOG_LEVEL")
-        log_level: LogLevel = options.log_level or env_log_level or "info"
+        log_level: LogLevel = (
+            options.log_level
+            or (env_log_level if env_log_level in ("debug", "info", "warn", "error", "silent") else None)  # type: ignore[assignment]
+            or "info"
+        )
 
         # Load config file
         config_path = config_dir / "veto.config.yaml"
@@ -299,16 +303,19 @@ class Veto:
                         logging=parsed.get("logging"),
                         rules=parsed.get("rules"),
                     )
-                    log_level = (
-                        options.log_level
-                        or env_log_level
-                        or (
-                            config.logging.get("level")
-                            if config.logging
-                            else None
-                        )
-                        or "info"
+                    config_log_level = (
+                        config.logging.get("level")
+                        if config.logging
+                        else None
                     )
+                    if options.log_level:
+                        log_level = options.log_level
+                    elif env_log_level in ("debug", "info", "warn", "error", "silent"):
+                        log_level = env_log_level  # type: ignore[assignment]
+                    elif config_log_level in ("debug", "info", "warn", "error", "silent"):
+                        log_level = config_log_level
+                    else:
+                        log_level = "info"
 
         logger = create_logger(log_level)
 

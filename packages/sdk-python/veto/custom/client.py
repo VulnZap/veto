@@ -133,7 +133,7 @@ class CustomClient:
             if not content:
                 raise CustomError("Empty response from OpenAI")
 
-            return content
+            return str(content)
         except ImportError:
             raise CustomError(
                 "OpenAI package not installed. Install with: pip install veto[openai]"
@@ -174,7 +174,7 @@ class CustomClient:
             if content.type != "text":
                 raise CustomError("Unexpected response type from Anthropic")
 
-            return content.text
+            return str(content.text)
         except ImportError:
             raise CustomError(
                 "Anthropic package not installed. Install with: pip install veto[anthropic]"
@@ -252,7 +252,7 @@ class CustomClient:
             if not text:
                 raise CustomError("Empty response from Gemini")
 
-            return text
+            return str(text)
         except ImportError:
             raise CustomError(
                 "Google GenAI package not installed. Install with: pip install veto[gemini]"

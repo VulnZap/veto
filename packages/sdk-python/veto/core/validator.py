@@ -155,7 +155,9 @@ class ValidationEngine:
 
         # If no validators, return default decision
         if len(applicable_validators) == 0:
-            default_result = ValidationResult(decision=self._default_decision)
+            from veto.types.config import ValidationDecision
+            decision: ValidationDecision = "allow" if self._default_decision == "allow" else "deny"
+            default_result = ValidationResult(decision=decision)
             self._logger.debug(
                 "No applicable validators, using default decision",
                 {"decision": self._default_decision},
