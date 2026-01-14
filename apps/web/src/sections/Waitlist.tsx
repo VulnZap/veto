@@ -56,75 +56,125 @@ export function Waitlist() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* OSS */}
-          <div className="p-6 border border-border rounded-lg bg-surface">
-            <h3 className="text-lg font-medium text-foreground mb-2">OSS</h3>
-            <div className="mb-6">
-              <span className="text-3xl font-medium text-foreground">Free</span>
-              <span className="text-sm text-muted-foreground ml-1">forever</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* FREE */}
+          <div className="p-6 border border-border rounded-lg bg-surface flex flex-col">
+            <h3 className="text-lg font-medium text-foreground mb-2">Free</h3>
+            <div className="mb-4">
+              <span className="text-3xl font-medium text-foreground">$0</span>
+              <span className="text-sm text-muted-foreground ml-1">/mo</span>
             </div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground mb-6 h-8">
+              For developers learning & building.
+            </p>
+            <ul className="space-y-3 text-sm text-muted-foreground flex-1">
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>Local enforcement</span>
+                <span>10k decisions/mo</span>
               </li>
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>All agents</span>
+                <span>1 agent</span>
               </li>
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>BYOK models</span>
+                <span>7-day logs</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span>Local policies</span>
               </li>
             </ul>
           </div>
 
-          {/* Pro (Highlighted) */}
-          <div className="p-6 border-2 border-primary rounded-lg bg-primary/5 relative">
+          {/* TEAM */}
+          <div className="p-6 border-2 border-primary rounded-lg bg-primary/5 relative flex flex-col">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-white text-xs font-medium rounded-full">
-              Popular
+              Production
             </div>
-            <h3 className="text-lg font-medium text-foreground mb-2">Pro</h3>
-            <div className="mb-6">
-              <span className="text-3xl font-medium text-foreground">$29</span>
-              <span className="text-sm text-muted-foreground ml-1">/dev/mo</span>
+            <h3 className="text-lg font-medium text-foreground mb-2">Team</h3>
+            <div className="mb-4">
+              <span className="text-3xl font-medium text-foreground">$99</span>
+              <span className="text-sm text-muted-foreground ml-1">/mo</span>
             </div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground mb-6 h-8">
+              For startups deploying to production.
+            </p>
+            <ul className="space-y-3 text-sm text-muted-foreground flex-1">
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>Cloud sync</span>
+                <span>100k decisions/mo</span>
               </li>
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>Dashboard</span>
+                <span>10 agents</span>
               </li>
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>5 repos</span>
+                <span>30-day logs</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span>Cloud dashboard</span>
               </li>
             </ul>
           </div>
 
-          {/* Team */}
-          <div className="p-6 border border-border rounded-lg bg-surface">
-            <h3 className="text-lg font-medium text-foreground mb-2">Team</h3>
-            <div className="mb-6">
-              <span className="text-3xl font-medium text-foreground">$79</span>
-              <span className="text-sm text-muted-foreground ml-1">/dev/mo</span>
+          {/* BUSINESS */}
+          <div className="p-6 border border-border rounded-lg bg-surface flex flex-col">
+            <h3 className="text-lg font-medium text-foreground mb-2">Business</h3>
+            <div className="mb-4">
+              <span className="text-3xl font-medium text-foreground">$499</span>
+              <span className="text-sm text-muted-foreground ml-1">/mo</span>
             </div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground mb-6 h-8">
+              For scaling companies & compliance.
+            </p>
+            <ul className="space-y-3 text-sm text-muted-foreground flex-1">
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>Unlimited repos</span>
+                <span>1M decisions/mo</span>
               </li>
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>SSO</span>
+                <span>Unlimited agents</span>
               </li>
               <li className="flex items-start gap-2">
                 <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>Approval workflows</span>
+                <span>Managed policies</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span>SSO / SAML</span>
+              </li>
+            </ul>
+          </div>
+
+          {/* ENTERPRISE */}
+          <div className="p-6 border border-border rounded-lg bg-surface flex flex-col">
+            <h3 className="text-lg font-medium text-foreground mb-2">Enterprise</h3>
+            <div className="mb-4">
+              <span className="text-3xl font-medium text-foreground">Custom</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-6 h-8">
+              For regulated industries.
+            </p>
+            <ul className="space-y-3 text-sm text-muted-foreground flex-1">
+              <li className="flex items-start gap-2">
+                <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span>Unlimited decisions</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span>Unlimited agents</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span>Custom retention</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span>Dedicated Support</span>
               </li>
             </ul>
           </div>
