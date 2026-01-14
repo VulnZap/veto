@@ -31,9 +31,9 @@ export function Hero() {
 
       <div className="max-w-5xl mx-auto">
         {/* Text Content */}
-        <div className="max-w-3xl mx-auto text-center">
+        <div className="max-w-2xl mx-auto text-center">
           {/* Badge */}
-          <div className="animate-in delay-1 flex justify-center mb-6">
+          <div className="animate-in delay-1 flex justify-center mb-[21px]">
             <Announcement themed className="bg-surface/60 border-border/60 shadow-none">
               <AnnouncementTag className="bg-primary/10 text-primary">Open source</AnnouncementTag>
               <AnnouncementTitle className="text-sm text-muted-foreground">
@@ -48,17 +48,17 @@ export function Hero() {
           </div>
 
           {/* Tagline */}
-          <div className="mt-8 animate-in delay-3">
+          <div className="mt-[34px] animate-in delay-3">
             <h1 className="text-hero font-medium tracking-tight text-foreground">
               Agent proposes. Veto decides.
             </h1>
-            <p className="mt-4 text-lead text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            <p className="mt-[21px] text-lead text-muted-foreground max-w-2xl mx-auto leading-relaxed">
               Deterministic control for non-deterministic software. Prevent side effects, enforce budget limits, and audit every tool call.
             </p>
           </div>
 
           {/* Install Command */}
-          <div className="mt-8 animate-in delay-4">
+          <div className="mt-[34px] animate-in delay-4">
             <button
               onClick={handleCopy}
               className="inline-flex items-center gap-3 px-4 py-2.5 bg-surface text-text-secondary border border-border-subtle rounded-sm font-mono text-sm hover:border-primary/50 transition-all cursor-pointer group"
@@ -78,7 +78,7 @@ export function Hero() {
           </div>
 
           {/* CTAs */}
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4 animate-in delay-4">
+          <div className="mt-[21px] flex flex-col sm:flex-row items-center justify-center gap-4 animate-in delay-4">
             <a
               href="https://github.com/VulnZap/veto#quick-start"
               className="inline-flex items-center h-10 px-5 text-sm font-medium text-white bg-primary rounded-sm hover:bg-primary/90 transition-colors"
@@ -101,7 +101,7 @@ export function Hero() {
         </div>
 
         {/* Terminal Screenshot */}
-        <div className="mt-16 animate-in delay-5">
+        <div className="mt-[55px] animate-in delay-5">
           <div className="mx-auto max-w-3xl">
             <img
               src="/terminal-screenshot.png"
