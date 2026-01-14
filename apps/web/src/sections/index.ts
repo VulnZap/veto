@@ -1,0 +1,8 @@
+export { Hero } from './Hero'
+export { HowItWorks } from './HowItWorks'
+export { Integrations } from './Integrations'
+export { OneLinePattern } from './OneLinePattern'
+export { Rules } from './Rules'
+export { CodeTabs } from './CodeTabs'
+export { Waitlist } from './Waitlist'
+export { Footer } from './Footer'
