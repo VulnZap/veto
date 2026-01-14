@@ -1,7 +1,21 @@
+import { useState, useCallback } from 'react'
 import { IconArrowRight, IconBrandGithub } from '@tabler/icons-react'
 import { DotPattern } from '@/components/ui/dot-pattern'
+import { Announcement, AnnouncementTag, AnnouncementTitle } from '@/components/ui/announcement'
 
 export function Hero() {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText('pip install veto')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }, [])
+
   return (
     <section className="pt-32 pb-24 px-6 overflow-hidden">
       {/* Subtle Background */}
@@ -20,9 +34,12 @@ export function Hero() {
         <div className="max-w-3xl mx-auto text-center">
           {/* Badge */}
           <div className="animate-in delay-1 flex justify-center mb-6">
-            <div className="inline-flex items-center px-3 py-1 rounded-sm border border-primary/20 bg-primary/5 text-primary text-sm font-medium tracking-wide uppercase">
-              Open Source Authorization Kernel
-            </div>
+            <Announcement themed className="bg-surface/60 border-border/60 shadow-none">
+              <AnnouncementTag className="bg-primary/10 text-primary">Open source</AnnouncementTag>
+              <AnnouncementTitle className="text-sm text-muted-foreground">
+                Authorization kernel
+              </AnnouncementTitle>
+            </Announcement>
           </div>
 
           {/* Logo */}
@@ -43,14 +60,20 @@ export function Hero() {
           {/* Install Command */}
           <div className="mt-8 animate-in delay-4">
             <button
-              onClick={() => {
-                navigator.clipboard.writeText('pip install veto')
-              }}
+              onClick={handleCopy}
               className="inline-flex items-center gap-3 px-4 py-2.5 bg-surface text-text-secondary border border-border-subtle rounded-sm font-mono text-sm hover:border-primary/50 transition-all cursor-pointer group"
               title="Click to copy"
             >
-              <span className="text-text-tertiary">$</span>
-              <span className="group-hover:text-foreground transition-colors">pip install veto</span>
+              {copied ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-500">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <span className="text-text-tertiary">$</span>
+              )}
+              <span className="group-hover:text-foreground transition-colors">
+                pip install veto
+              </span>
             </button>
           </div>
 
@@ -83,7 +106,7 @@ export function Hero() {
             <img
               src="/terminal-screenshot.png"
               alt="Veto terminal interface showing real-time agent authorization - 7 calls, 4 allowed, 2 denied, 1 pending"
-              className="w-full h-auto rounded-sm border border-border/50 shadow-lg"
+              className="w-full h-auto rounded-sm shadow-lg"
             />
           </div>
         </div>
