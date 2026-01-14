@@ -29,7 +29,7 @@ export function Integrations() {
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <h2 className="text-section font-medium tracking-tight text-foreground mb-8 text-center">
-          Authorization for every agent.
+          Works with every agent.
         </h2>
 
         {/* Marquee */}
