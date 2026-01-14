@@ -57,7 +57,7 @@ export function Integrations() {
         {/* SDK Callout */}
         <div className="mt-8 text-center">
           <p className="text-sm text-muted-foreground">
-            Python SDK · TypeScript SDK · Any tool-calling LLM
+            Python SDK · TypeScript SDK · <span className="text-foreground font-medium">Any tool-calling LLM</span>
           </p>
         </div>
       </div>
