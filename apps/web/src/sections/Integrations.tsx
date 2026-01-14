@@ -44,7 +44,7 @@ export function Integrations() {
                     {item.icon && (
                       <item.icon
                         size={32}
-                        className={item.isSecurity ? 'text-primary/80' : 'text-muted-foreground/80'}
+                        className="text-muted-foreground/80"
                       />
                     )}
                   </div>
