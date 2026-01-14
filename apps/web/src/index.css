@@ -103,25 +103,29 @@ h1, h2, h3 {
 
 @keyframes marquee {
   0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+  100% { transform: translateX(calc(-100% / 3)); }
 }
 
 @keyframes marquee-reverse {
-  0% { transform: translateX(-50%); }
+  0% { transform: translateX(calc(-100% / 3)); }
   100% { transform: translateX(0); }
 }
 
 .animate-marquee {
-  animation: marquee var(--duration, 40s) linear infinite;
+  animation: marquee var(--duration, 60s) linear infinite;
 }
 
 .animate-marquee-reverse {
-  animation: marquee-reverse var(--duration, 40s) linear infinite;
+  animation: marquee-reverse var(--duration, 60s) linear infinite;
 }
 
-.mask-gradient {
-  mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+.marquee-container {
+  mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+}
+
+.marquee-wrapper {
+  width: 100%;
 }
 
 .animate-in {
@@ -202,6 +206,14 @@ h1, h2, h3 {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {

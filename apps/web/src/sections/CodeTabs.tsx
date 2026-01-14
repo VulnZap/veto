@@ -76,15 +76,10 @@ export function CodeTabs() {
         </div>
 
         {/* Code Block */}
-        <div className="bg-background rounded border border-surface-elevated overflow-hidden">
-          {/* Window Chrome */}
-          <div className="flex items-center px-4 py-2.5 border-b border-surface-elevated">
-            <div className="flex gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
-              <div className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
-              <div className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
-            </div>
-            <span className="ml-3 text-[11px] text-text-tertiary font-mono">
+        <div className="bg-background rounded-sm border border-border overflow-hidden">
+          {/* Simple Header */}
+          <div className="flex items-center px-4 py-2 border-b border-border">
+            <span className="text-xs text-text-tertiary font-mono">
               {activeTab === 'python'
                 ? 'agent.py'
                 : activeTab === 'typescript'
@@ -94,8 +89,8 @@ export function CodeTabs() {
           </div>
 
           {/* Code */}
-          <div className="p-4 overflow-x-auto">
-            <pre className="text-[13px] font-mono leading-relaxed">
+          <div className="p-4 overflow-x-auto scrollbar-hide">
+            <pre className="text-sm font-mono leading-relaxed">
               <code>
                 {code[activeTab].split('\n').map((line, i) => (
                   <div key={i} className="whitespace-pre">
