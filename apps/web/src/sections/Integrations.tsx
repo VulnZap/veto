@@ -26,7 +26,7 @@ export function Integrations() {
 
         {/* Marquee */}
         <div className="relative overflow-hidden marquee-container">
-          <Marquee className="gap-[1.25rem]">
+          <Marquee className="gap-[1.75rem]">
             {[...logos, ...logos, ...logos].map((logo, index) => (
               <div
                 key={index}
