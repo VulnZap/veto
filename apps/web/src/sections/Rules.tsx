@@ -47,7 +47,7 @@ export function Rules() {
 
         {/* Caption */}
         <p className="mt-8 text-center text-sm text-muted-foreground">
-          Or use natural language with Veto Cloud.
+          Or use natural language with <span className="text-foreground font-medium">Veto Cloud</span>.
         </p>
       </div>
     </section>
