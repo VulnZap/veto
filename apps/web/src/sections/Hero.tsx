@@ -4,7 +4,7 @@ import { DotPattern } from '@/components/ui/dot-pattern'
 export function Hero() {
   return (
     <section className="pt-32 pb-24 px-6 overflow-hidden">
-      {/* Subtle DotPattern Background */}
+      {/* Subtle Background */}
       <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
         <DotPattern
           width={24}
@@ -45,9 +45,8 @@ export function Hero() {
             <button
               onClick={() => {
                 navigator.clipboard.writeText('pip install veto')
-                // Simple feedback - could enhance with toast notification
               }}
-              className="inline-flex items-center gap-3 px-4 py-2.5 bg-surface text-text-secondary border border-border-subtle rounded font-mono text-sm hover:border-primary/50 transition-colors cursor-pointer group"
+              className="inline-flex items-center gap-3 px-4 py-2.5 bg-surface text-text-secondary border border-border-subtle rounded-sm font-mono text-sm hover:border-primary/50 transition-all cursor-pointer group"
               title="Click to copy"
             >
               <span className="text-text-tertiary">$</span>
@@ -59,7 +58,7 @@ export function Hero() {
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4 animate-in delay-4">
             <a
               href="https://github.com/VulnZap/veto#quick-start"
-              className="btn-primary inline-flex items-center h-11 px-6 text-sm font-medium text-white rounded"
+              className="inline-flex items-center h-10 px-5 text-sm font-medium text-white bg-primary rounded-sm hover:bg-primary/90 transition-colors"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -68,7 +67,7 @@ export function Hero() {
             </a>
             <a
               href="https://github.com/VulnZap/veto"
-              className="btn-secondary inline-flex items-center h-11 px-6 text-sm font-medium text-text-secondary border border-border-subtle rounded"
+              className="inline-flex items-center h-10 px-5 text-sm font-medium text-text-secondary bg-surface border border-border-subtle rounded-sm hover:bg-surface-elevated transition-colors"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -78,13 +77,13 @@ export function Hero() {
           </div>
         </div>
 
-        {/* Terminal Screenshot - The Real Deal */}
+        {/* Terminal Screenshot */}
         <div className="mt-16 animate-in delay-5">
           <div className="mx-auto max-w-3xl">
             <img
               src="/terminal-screenshot.png"
               alt="Veto terminal interface showing real-time agent authorization - 7 calls, 4 allowed, 2 denied, 1 pending"
-              className="w-full h-auto rounded-lg border border-border/50 shadow-2xl"
+              className="w-full h-auto rounded-sm border border-border/50 shadow-lg"
             />
           </div>
         </div>
