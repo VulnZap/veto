@@ -58,6 +58,16 @@ export default {
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
+      fontSize: {
+        // Golden Ratio Scale (1.25)
+        // Base: 16px
+        'xs': ['0.6875rem', { lineHeight: '1.4' }],       // 11px
+        'sm': ['0.8125rem', { lineHeight: '1.5' }],       // 13px
+        'base': ['1rem', { lineHeight: '1.6' }],          // 16px
+        'lead': ['1.25rem', { lineHeight: '1.5' }],       // 20px
+        'section': ['1.5rem', { lineHeight: '1.25' }],    // 24px
+        'hero': ['2.5rem', { lineHeight: '1.1', letterSpacing: '-0.015em' }], // 40px
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],

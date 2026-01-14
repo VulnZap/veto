@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { IconCheck } from '@tabler/icons-react'
+import { BorderBeam } from '@/components/ui/border-beam'
 
 export function Waitlist() {
   const [email, setEmail] = useState('')
@@ -7,24 +8,63 @@ export function Waitlist() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Backend integration with Convex
     console.log('Waitlist signup:', email)
     setSubmitted(true)
   }
 
+  const plans = [
+    {
+      name: 'Free',
+      price: '$0',
+      period: '/mo',
+      description: 'For developers learning & building.',
+      features: ['10k decisions/mo', '1 agent', '7-day logs', 'Local policies'],
+      cta: 'Get Started',
+      highlight: false,
+    },
+    {
+      name: 'Team',
+      price: '$99',
+      period: '/mo',
+      description: 'For startups deploying to production.',
+      features: ['100k decisions/mo', '10 agents', '30-day logs', 'Cloud dashboard'],
+      cta: 'Start Trial',
+      highlight: true,
+      badge: 'Production',
+    },
+    {
+      name: 'Business',
+      price: '$499',
+      period: '/mo',
+      description: 'For scaling companies & compliance.',
+      features: ['1M decisions/mo', 'Unlimited agents', 'Managed policies', 'SSO / SAML'],
+      cta: 'Contact Sales',
+      highlight: false,
+    },
+    {
+      name: 'Enterprise',
+      price: 'Custom',
+      period: '',
+      description: 'For regulated industries.',
+      features: ['Unlimited decisions', 'Unlimited agents', 'Custom retention', 'Dedicated Support'],
+      cta: 'Talk to Us',
+      highlight: false,
+    },
+  ]
+
   return (
     <section id="waitlist" className="py-24 px-6 border-t border-border">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12">
-          <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-2">
+          <h2 className="text-section font-medium tracking-tight text-foreground mb-2">
             Veto Cloud
           </h2>
           <p className="text-sm text-muted-foreground">Private beta · Coming soon</p>
         </div>
 
         {/* Description */}
-        <p className="text-center text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto mb-10">
+        <p className="text-center text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto mb-16">
           Central dashboard. Team sync. Approval workflows.
         </p>
 
@@ -38,11 +78,11 @@ export function Waitlist() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com"
                 required
-                className="flex-1 h-11 px-4 text-sm bg-surface border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                className="flex-1 h-11 px-4 text-sm bg-surface border border-border rounded-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
               />
               <button
                 type="submit"
-                className="btn-primary h-11 px-6 text-sm font-medium text-white rounded whitespace-nowrap"
+                className="btn-primary h-11 px-6 text-sm font-medium text-white rounded-sm whitespace-nowrap"
               >
                 Join Waitlist
               </button>
@@ -55,129 +95,70 @@ export function Waitlist() {
           )}
         </div>
 
-        {/* Pricing Cards - 2x2 Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* FREE */}
-          <div className="p-5 border border-border rounded-lg bg-surface flex flex-col hover:border-border-subtle transition-colors">
-            <h3 className="text-sm font-medium text-foreground mb-1">Free</h3>
-            <div className="mb-3">
-              <span className="text-2xl font-medium text-foreground">$0</span>
-              <span className="text-xs text-muted-foreground ml-1">/mo</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground mb-4 h-8 leading-tight">
-              For developers learning & building.
-            </p>
-            <ul className="space-y-2 text-xs text-muted-foreground flex-1">
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>10k decisions/mo</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>1 agent</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>7-day logs</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>Local policies</span>
-              </li>
-            </ul>
-          </div>
+        {/* Pricing Cards - Single Row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {plans.map((plan, index) => (
+            <div
+              key={index}
+              className={`relative p-4 rounded-lg border bg-surface flex flex-col ${
+                plan.highlight
+                  ? 'border-primary shadow-lg'
+                  : 'border-border hover:border-border-subtle'
+              } transition-all`}
+            >
+              {/* BorderBeam for highlighted card */}
+              {plan.highlight && (
+                <BorderBeam
+                  duration={6}
+                  colorFrom="#f97316"
+                  colorTo="#ea580c"
+                  borderWidth={1.5}
+                />
+              )}
 
-          {/* TEAM */}
-          <div className="p-5 border-2 border-primary rounded-lg bg-primary/5 relative flex flex-col">
-            <div className="absolute -top-2.5 right-4 px-2 py-0.5 bg-primary text-white text-[10px] font-medium rounded-full">
-              Production
-            </div>
-            <h3 className="text-sm font-medium text-foreground mb-1">Team</h3>
-            <div className="mb-3">
-              <span className="text-2xl font-medium text-foreground">$99</span>
-              <span className="text-xs text-muted-foreground ml-1">/mo</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground mb-4 h-8 leading-tight">
-              For startups deploying to production.
-            </p>
-            <ul className="space-y-2 text-xs text-muted-foreground flex-1">
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>100k decisions/mo</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>10 agents</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>30-day logs</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>Cloud dashboard</span>
-              </li>
-            </ul>
-          </div>
+              {/* Badge */}
+              {plan.badge && (
+                <div className="absolute -top-3 right-4 px-2 py-0.5 bg-primary text-white text-[10px] font-medium rounded-sm">
+                  {plan.badge}
+                </div>
+              )}
 
-          {/* BUSINESS */}
-          <div className="p-5 border border-border rounded-lg bg-surface flex flex-col hover:border-border-subtle transition-colors">
-            <h3 className="text-sm font-medium text-foreground mb-1">Business</h3>
-            <div className="mb-3">
-              <span className="text-2xl font-medium text-foreground">$499</span>
-              <span className="text-xs text-muted-foreground ml-1">/mo</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground mb-4 h-8 leading-tight">
-              For scaling companies & compliance.
-            </p>
-            <ul className="space-y-2 text-xs text-muted-foreground flex-1">
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>1M decisions/mo</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>Unlimited agents</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>Managed policies</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>SSO / SAML</span>
-              </li>
-            </ul>
-          </div>
+              {/* Header */}
+              <div className="mb-3">
+                <h3 className="text-sm font-medium text-foreground">{plan.name}</h3>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-xl font-medium text-foreground">{plan.price}</span>
+                  <span className="text-xs text-muted-foreground">{plan.period}</span>
+                </div>
+              </div>
 
-          {/* ENTERPRISE */}
-          <div className="p-5 border border-border rounded-lg bg-surface flex flex-col hover:border-border-subtle transition-colors">
-            <h3 className="text-sm font-medium text-foreground mb-1">Enterprise</h3>
-            <div className="mb-3">
-              <span className="text-2xl font-medium text-foreground">Custom</span>
+              {/* Description */}
+              <p className="text-xs text-muted-foreground mb-4 h-8 leading-tight">
+                {plan.description}
+              </p>
+
+              {/* Features */}
+              <ul className="space-y-2 text-xs text-muted-foreground flex-1 mb-4">
+                {plan.features.map((feature, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <IconCheck className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+
+              {/* CTA */}
+              <button
+                className={`w-full h-9 text-xs font-medium rounded-sm transition-colors ${
+                  plan.highlight
+                    ? 'bg-primary text-white hover:bg-primary/90'
+                    : 'bg-surface border border-border hover:bg-surface-elevated'
+                }`}
+              >
+                {plan.cta}
+              </button>
             </div>
-            <p className="text-[11px] text-muted-foreground mb-4 h-8 leading-tight">
-              For regulated industries.
-            </p>
-            <ul className="space-y-2 text-xs text-muted-foreground flex-1">
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>Unlimited decisions</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>Unlimited agents</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>Custom retention</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <IconCheck className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <span>Dedicated Support</span>
-              </li>
-            </ul>
-          </div>
+          ))}
         </div>
       </div>
     </section>

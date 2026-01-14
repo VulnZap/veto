@@ -15,7 +15,7 @@ export function Rules() {
     <section className="py-24 px-6 border-t border-border">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
-        <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-10 text-center">
+        <h2 className="text-section font-medium tracking-tight text-foreground mb-10 text-center">
           Define policies in YAML.
         </h2>
 

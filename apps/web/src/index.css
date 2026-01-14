@@ -24,6 +24,14 @@
     --input: 0 0% 90%;
     --ring: 24 94% 53%;
     --radius: 0.25rem;
+
+    /* Golden Ratio Typography Variables (1.25) */
+    --text-xs: 0.6875rem;
+    --text-sm: 0.8125rem;
+    --text-base: 1rem;
+    --text-lead: 1.25rem;
+    --text-section: 1.5rem;
+    --text-hero: 2.5rem;
   }
 
   .dark {
@@ -38,7 +46,7 @@
     --secondary: 0 0% 15%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 15%;
-    --muted-foreground: 220 13% 55%; /* #7F8A9A - lighter slate */
+    --muted-foreground: 220 13% 55%;
     --accent: 24 94% 53%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 63% 31%;
@@ -48,11 +56,19 @@
     --ring: 24 94% 53%;
 
     /* UI colors */
-    --surface: 0 0% 10%; /* #1a1a1a */
-    --surface-elevated: 0 0% 15%; /* #262626 */
-    --border-subtle: 0 0% 20%; /* #333 */
-    --text-secondary: 0 0% 90%; /* #e5e5e5 */
-    --text-tertiary: 0 0% 45%; /* #737373 */
+    --surface: 0 0% 10%;
+    --surface-elevated: 0 0% 15%;
+    --border-subtle: 0 0% 20%;
+    --text-secondary: 0 0% 90%;
+    --text-tertiary: 0 0% 45%;
+
+    /* Golden Ratio Typography Variables (Dark) */
+    --text-xs: 0.6875rem;
+    --text-sm: 0.8125rem;
+    --text-base: 1rem;
+    --text-lead: 1.25rem;
+    --text-section: 1.5rem;
+    --text-hero: 2.5rem;
   }
 
   * {
@@ -83,6 +99,24 @@ h1, h2, h3 {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(calc(-100% - 1rem)); }
+}
+
+@keyframes marquee-reverse {
+  0% { transform: translateX(calc(-100% - 1rem)); }
+  100% { transform: translateX(0); }
+}
+
+.animate-marquee {
+  animation: marquee var(--duration, 30s) linear infinite;
+}
+
+.animate-marquee-reverse {
+  animation: marquee-reverse var(--duration, 30s) linear infinite;
 }
 
 .animate-in {

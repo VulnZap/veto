@@ -1,14 +1,26 @@
 import { IconArrowRight, IconBrandGithub } from '@tabler/icons-react'
+import { DotPattern } from '@/components/ui/dot-pattern'
 
 export function Hero() {
   return (
     <section className="pt-32 pb-24 px-6 overflow-hidden">
+      {/* Subtle DotPattern Background */}
+      <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+        <DotPattern
+          width={24}
+          height={24}
+          cx={1}
+          cy={1}
+          className="opacity-[0.03] text-foreground"
+        />
+      </div>
+
       <div className="max-w-5xl mx-auto">
         {/* Text Content */}
         <div className="max-w-3xl mx-auto text-center">
           {/* Badge */}
-          <div className="animate-in delay-1 flex justify-center mb-8">
-            <div className="inline-flex items-center px-3 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium tracking-wide uppercase">
+          <div className="animate-in delay-1 flex justify-center mb-6">
+            <div className="inline-flex items-center px-3 py-1 rounded-sm border border-primary/20 bg-primary/5 text-primary text-sm font-medium tracking-wide uppercase">
               Open Source Authorization Kernel
             </div>
           </div>
@@ -20,16 +32,16 @@ export function Hero() {
 
           {/* Tagline */}
           <div className="mt-8 animate-in delay-3">
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground">
+            <h1 className="text-hero font-medium tracking-tight text-foreground">
               Agent proposes. Veto decides.
             </h1>
-            <p className="mt-6 text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            <p className="mt-4 text-lead text-muted-foreground max-w-2xl mx-auto leading-relaxed">
               Deterministic control for non-deterministic software. Prevent side effects, enforce budget limits, and audit every tool call.
             </p>
           </div>
 
           {/* Install Command */}
-          <div className="mt-10 animate-in delay-4">
+          <div className="mt-8 animate-in delay-4">
             <button
               onClick={() => {
                 navigator.clipboard.writeText('pip install veto')
