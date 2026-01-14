@@ -95,12 +95,12 @@ export function Waitlist() {
           )}
         </div>
 
-        {/* Pricing Cards - Single Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Pricing Cards - Two Rows */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
           {plans.map((plan, index) => (
             <div
               key={index}
-              className={`relative p-4 rounded-lg border bg-surface flex flex-col ${
+              className={`relative p-6 rounded-lg border bg-surface flex flex-col ${
                 plan.highlight
                   ? 'border-primary shadow-lg'
                   : 'border-border hover:border-border-subtle'
@@ -124,24 +124,24 @@ export function Waitlist() {
               )}
 
               {/* Header */}
-              <div className="mb-3">
-                <h3 className="text-sm font-medium text-foreground">{plan.name}</h3>
+              <div className="mb-4">
+                <h3 className="text-base font-medium text-foreground">{plan.name}</h3>
                 <div className="flex items-baseline gap-1 mt-1">
-                  <span className="text-xl font-medium text-foreground">{plan.price}</span>
-                  <span className="text-xs text-muted-foreground">{plan.period}</span>
+                  <span className="text-2xl font-medium text-foreground">{plan.price}</span>
+                  <span className="text-sm text-muted-foreground">{plan.period}</span>
                 </div>
               </div>
 
               {/* Description */}
-              <p className="text-xs text-muted-foreground mb-4 h-8 leading-tight">
+              <p className="text-sm text-muted-foreground mb-5">
                 {plan.description}
               </p>
 
               {/* Features */}
-              <ul className="space-y-2 text-xs text-muted-foreground flex-1 mb-4">
+              <ul className="space-y-2.5 text-sm text-muted-foreground flex-1 mb-6">
                 {plan.features.map((feature, i) => (
                   <li key={i} className="flex items-start gap-2">
-                    <IconCheck className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
+                    <IconCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -149,7 +149,7 @@ export function Waitlist() {
 
               {/* CTA */}
               <button
-                className={`w-full h-9 text-xs font-medium rounded-sm transition-colors ${
+                className={`w-full h-10 text-sm font-medium rounded-sm transition-colors ${
                   plan.highlight
                     ? 'bg-primary text-white hover:bg-primary/90'
                     : 'bg-surface border border-border text-foreground hover:bg-surface-elevated'
