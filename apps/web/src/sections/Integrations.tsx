@@ -25,14 +25,14 @@ export function Integrations() {
         </h2>
 
         {/* Marquee */}
-        <div className="relative overflow-hidden mask-gradient">
-          <Marquee pauseOnHover className="gap-6">
-            {logos.map((logo, index) => (
+        <div className="relative overflow-hidden marquee-container">
+          <Marquee className="gap-[1.25rem]">
+            {[...logos, ...logos, ...logos].map((logo, index) => (
               <div
                 key={index}
-                className="flex items-center justify-center w-14 h-14 rounded-lg bg-surface"
+                className="flex items-center justify-center w-[3.5rem] h-[3.5rem]"
               >
-                <logo.icon size={28} className="text-muted-foreground" />
+                <logo.icon size={32} className="text-muted-foreground/80" />
               </div>
             ))}
           </Marquee>
