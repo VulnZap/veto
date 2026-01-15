@@ -1,15 +1,29 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
   <head>
-    <script type="module">
-      if (import.meta.env.DEV && typeof navigator !== 'undefined') {
-        const isChromium = /Chrome|Chromium|Edg/.test(navigator.userAgent)
-        if (isChromium) {
-          import("//unpkg.com/react-grab/dist/index.global.js").catch(() => {})
-          import("//unpkg.com/@react-grab/claude-code/dist/client.global.js").catch(() => {})
-        }
+    <style>
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
       }
-    </script>
+      .sr-only:focus {
+        position: absolute;
+        width: auto;
+        height: auto;
+        margin: 0;
+        overflow: visible;
+        clip: auto;
+        white-space: normal;
+      }
+    </style>
+
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
