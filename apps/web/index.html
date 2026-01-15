@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
   <head>
+    <script type="module">
+      if (import.meta.env.DEV && typeof navigator !== 'undefined') {
+        const isChromium = /Chrome|Chromium|Edg/.test(navigator.userAgent)
+        if (isChromium) {
+          import("//unpkg.com/react-grab/dist/index.global.js").catch(() => {})
+          import("//unpkg.com/@react-grab/claude-code/dist/client.global.js").catch(() => {})
+        }
+      }
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -34,7 +43,7 @@
     <meta name="keywords" content="AI agents, authorization, security, agent framework, AI safety, policy engine">
     <link rel="canonical" href="https://veto.run" />
   </head>
-  <body class="bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased">
+  <body class="bg-background text-foreground antialiased">
     <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-veto-orange focus:text-white focus:rounded-lg focus:outline-none">
       Skip to content
     </a>
