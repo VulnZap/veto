@@ -142,3 +142,9 @@ __all__ = [
     "GoogleTool",
     "GoogleFunctionCall",
 ]
+
+# Framework integrations (imported on demand to avoid hard dependencies):
+#
+#   from veto.integrations.browser_use import wrap_browser_use
+#
+# See each integration's README for usage details.
