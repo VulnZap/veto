@@ -15,7 +15,6 @@ import aiohttp
 from veto.cloud.types import (
     ToolRegistration,
     ToolRegistrationResponse,
-    ValidationRequest,
     ValidationResponse,
     FailedConstraint,
 )

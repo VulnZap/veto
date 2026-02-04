@@ -16,7 +16,7 @@ from typing import (
     Protocol,
     runtime_checkable,
 )
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import os
 import inspect
 
@@ -27,7 +27,6 @@ from veto.types.config import (
     NamedValidator,
     ValidationContext,
     ValidationResult,
-    ToolCallHistoryEntry,
 )
 from veto.utils.logger import Logger, create_logger
 from veto.utils.id import generate_tool_call_id
@@ -301,15 +300,15 @@ class Veto:
                         param_type = "string"  # default
                         if param.annotation != inspect.Parameter.empty:
                             ann = param.annotation
-                            if ann == int:
+                            if ann is int:
                                 param_type = "integer"
-                            elif ann == float:
+                            elif ann is float:
                                 param_type = "number"
-                            elif ann == bool:
+                            elif ann is bool:
                                 param_type = "boolean"
-                            elif ann == list:
+                            elif ann is list:
                                 param_type = "array"
-                            elif ann == dict:
+                            elif ann is dict:
                                 param_type = "object"
 
                         parameters.append(
