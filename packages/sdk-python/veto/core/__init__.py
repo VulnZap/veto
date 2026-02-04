@@ -7,7 +7,6 @@ from veto.core.veto import (
     ToolCallDeniedError,
     VetoOptions,
     VetoMode,
-    ValidationMode,
     WrappedTools,
     WrappedHandler,
 )
@@ -39,7 +38,6 @@ __all__ = [
     "ToolCallDeniedError",
     "VetoOptions",
     "VetoMode",
-    "ValidationMode",
     "WrappedTools",
     "WrappedHandler",
     # Validator

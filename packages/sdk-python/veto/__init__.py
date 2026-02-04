@@ -2,15 +2,16 @@
 Veto - A guardrail system for AI agent tool calls.
 
 Veto sits between the AI model and tool execution, intercepting and
-validating tool calls before they are executed.
+validating tool calls before they are executed. Policies are managed
+in the Veto Cloud and validated via API.
 
 Example:
     >>> from veto import Veto
     >>>
-    >>> # Initialize Veto
+    >>> # Initialize Veto (uses VETO_API_KEY env var)
     >>> veto = await Veto.init()
     >>>
-    >>> # Wrap your tools
+    >>> # Wrap your tools (auto-registers with cloud)
     >>> wrapped_tools = veto.wrap(my_tools)
     >>>
     >>> # Pass to your Agent/LLM
@@ -49,24 +50,15 @@ from veto.types.config import (
     ToolCallHistoryEntry,
 )
 
-# Rule types
-from veto.rules.types import (
-    Rule,
-    RuleSet,
-    RuleCondition,
-    RuleAction,
-    RuleSeverity,
-    ValidationAPIResponse,
+# Cloud types
+from veto.cloud.types import (
+    ToolRegistration,
+    ToolParameter,
+    ValidationRequest,
+    ValidationResponse,
+    FailedConstraint,
 )
-
-# Custom provider types
-from veto.custom.types import (
-    CustomConfig,
-    CustomProvider,
-    CustomResponse,
-    CustomToolCall,
-)
-from veto.custom.client import CustomClient
+from veto.cloud.client import VetoCloudClient, VetoCloudConfig
 
 # Interception result
 from veto.core.interceptor import InterceptionResult
@@ -95,9 +87,6 @@ from veto.providers.types import (
     GoogleFunctionCall,
 )
 
-# CLI init function
-from veto.cli.init import init, is_initialized
-
 __all__ = [
     # Main
     "Veto",
@@ -123,19 +112,14 @@ __all__ = [
     "Validator",
     "NamedValidator",
     "ToolCallHistoryEntry",
-    # Rule types
-    "Rule",
-    "RuleSet",
-    "RuleCondition",
-    "RuleAction",
-    "RuleSeverity",
-    "ValidationAPIResponse",
-    # Custom types
-    "CustomConfig",
-    "CustomProvider",
-    "CustomResponse",
-    "CustomToolCall",
-    "CustomClient",
+    # Cloud types
+    "ToolRegistration",
+    "ToolParameter",
+    "ValidationRequest",
+    "ValidationResponse",
+    "FailedConstraint",
+    "VetoCloudClient",
+    "VetoCloudConfig",
     # Interception
     "InterceptionResult",
     "HistoryStats",
@@ -157,7 +141,4 @@ __all__ = [
     "AnthropicToolUse",
     "GoogleTool",
     "GoogleFunctionCall",
-    # CLI
-    "init",
-    "is_initialized",
 ]
