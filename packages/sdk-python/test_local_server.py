@@ -9,6 +9,7 @@ This tests:
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -45,8 +46,12 @@ async def test_registration():
     print("TEST 1: Tool Registration")
     print("=" * 60)
 
+    api_key = os.environ.get("VETO_API_KEY")
+    if not api_key:
+        raise RuntimeError("VETO_API_KEY must be set for local server tests")
+
     veto = await Veto.init(VetoOptions(
-        api_key="veto_eEJl44M2aQ9q14ZoilPLf0YPbVsTZ6JN6zKecxUdOiE",
+        api_key=api_key,
         base_url="http://localhost:3001",
         log_level="debug",
     ))

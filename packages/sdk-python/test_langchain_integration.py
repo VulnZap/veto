@@ -9,9 +9,9 @@ This tests:
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Add SDK to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -60,8 +60,12 @@ async def test_langchain_tool_wrapping():
     print("TEST 1: LangChain Tool Wrapping")
     print("=" * 60)
 
+    api_key = os.environ.get("VETO_API_KEY")
+    if not api_key:
+        raise RuntimeError("VETO_API_KEY must be set for LangChain integration tests")
+
     veto = await Veto.init(VetoOptions(
-        api_key="veto_eEJl44M2aQ9q14ZoilPLf0YPbVsTZ6JN6zKecxUdOiE",
+        api_key=api_key,
         base_url="http://localhost:3001",
         log_level="info",
     ))
@@ -164,7 +168,7 @@ async def test_unregistered_tool(veto: Veto, wrapped_search_tool):
         # It's OK if it's blocked - depends on server configuration
         print("  - Unregistered Tool: Blocked (acceptable)")
         return True
-    except Exception as e:
+    except Exception:
         try:
             if hasattr(wrapped_search_tool, 'func'):
                 result = await wrapped_search_tool.func({"query": "test", "limit": 5})

@@ -3,12 +3,12 @@ Tests for Veto core class.
 """
 
 import os
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from veto import Veto, VetoOptions
-from veto.cloud.client import VetoCloudClient, VetoCloudConfig
+from veto.cloud.client import VetoCloudClient
 from veto.cloud.types import ValidationResponse, ToolRegistrationResponse
 
 
@@ -74,13 +74,17 @@ class TestVetoInit:
 
     async def test_init_from_env_var(self):
         """Should use API key from environment variable."""
+        old_key = os.environ.get("VETO_API_KEY")
         os.environ["VETO_API_KEY"] = "env-test-key"
 
         try:
             veto = await Veto.init(VetoOptions(log_level="silent"))
             assert veto._cloud_client._api_key == "env-test-key"
         finally:
-            del os.environ["VETO_API_KEY"]
+            if old_key is None:
+                os.environ.pop("VETO_API_KEY", None)
+            else:
+                os.environ["VETO_API_KEY"] = old_key
 
 
 class TestVetoWrap:
@@ -172,7 +176,7 @@ class TestVetoWrap:
 
         # Need to await the registration which happens in wrap
         import asyncio
-        wrapped = veto.wrap([tool])
+        veto.wrap([tool])
         # Give async task time to complete
         await asyncio.sleep(0.1)
 

@@ -13,6 +13,7 @@ Tests:
 """
 
 import asyncio
+import os
 import sys
 import json
 import urllib.request
@@ -35,7 +36,9 @@ from veto import Veto, VetoOptions, ToolCallDeniedError
 # Configuration
 # =============================================================================
 
-API_KEY = "veto_eEJl44M2aQ9q14ZoilPLf0YPbVsTZ6JN6zKecxUdOiE"
+API_KEY = os.environ.get("VETO_API_KEY")
+if not API_KEY:
+    raise RuntimeError("VETO_API_KEY must be set for e2e tests")
 BASE_URL = "http://localhost:3001"
 LOG_FILE = Path(__file__).parent / "e2e_test_results.log"
 
