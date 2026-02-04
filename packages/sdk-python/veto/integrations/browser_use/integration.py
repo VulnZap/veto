@@ -30,6 +30,9 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
     from veto.core.veto import Veto
 
+from veto.types.tool import ToolCall
+from veto.utils.id import generate_tool_call_id
+
 logger = logging.getLogger("veto.integrations.browser_use")
 
 # Default set of browser-use actions that are validated through Veto.
@@ -115,7 +118,7 @@ async def wrap_browser_use(
 
     actions_to_validate = validated_actions or DEFAULT_VALIDATED_ACTIONS
 
-    class VetoTools(Tools):
+    class VetoTools(Tools):  # type: ignore[misc]
         """Browser-use Tools subclass with Veto validation on ``act()``."""
 
         async def act(
@@ -140,26 +143,25 @@ async def wrap_browser_use(
 
             if action_name and action_name in actions_to_validate:
                 try:
-                    result = await veto._cloud_client.validate(
-                        tool_name=action_name,
-                        arguments=params if isinstance(params, dict) else {"value": params},
+                    arguments = params if isinstance(params, dict) else {"value": params}
+                    result = await veto._validate_tool_call(
+                        ToolCall(
+                            id=generate_tool_call_id(),
+                            name=action_name,
+                            arguments=arguments,
+                        )
                     )
 
-                    if result.decision == "deny":
-                        reason = result.reason or "Policy violation"
-                        constraints = (
-                            ", ".join(fc.message for fc in result.failed_constraints)
-                            if result.failed_constraints
-                            else reason
-                        )
+                    if not result.allowed:
+                        reason = result.validation_result.reason or "Policy violation"
 
-                        logger.info("BLOCKED %s: %s", action_name, constraints)
+                        logger.info("BLOCKED %s: %s", action_name, reason)
 
                         if on_deny is not None:
-                            await on_deny(action_name, params, constraints)
+                            await on_deny(action_name, params, reason)
 
                         return ActionResult(
-                            error=f"Action blocked by Veto: {constraints}",
+                            error=f"Action blocked by Veto: {reason}",
                         )
                     else:
                         logger.info("ALLOWED %s", action_name)
