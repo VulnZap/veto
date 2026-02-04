@@ -569,7 +569,7 @@ class Veto:
                         # For sync invoke, we run validation in a new event loop
                         import asyncio
 
-                        async def validate_and_invoke():
+                        async def validate_and_invoke() -> dict[str, Any]:
                             result = await veto._validate_tool_call(
                                 ToolCall(
                                     id=generate_tool_call_id(),
