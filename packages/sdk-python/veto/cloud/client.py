@@ -371,7 +371,7 @@ class VetoCloudClient:
                                 {"status": response.status, "error": error_text},
                             )
                         else:
-                            data = await response.json()
+                            data: dict[str, Any] = await response.json()
                             status = data.get("status", "pending")
 
                             if status != "pending":
