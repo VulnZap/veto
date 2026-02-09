@@ -5,6 +5,7 @@
  */
 
 import type { Logger } from '../utils/logger.js';
+import type { DecisionExplanation } from './explanation.js';
 
 /**
  * Log level for Veto operations.
@@ -29,6 +30,8 @@ export interface ValidationResult {
   modifiedArguments?: Record<string, unknown>;
   /** Additional metadata about the validation */
   metadata?: Record<string, unknown>;
+  /** Decision explanation with rule evaluation trace */
+  explanation?: DecisionExplanation;
 }
 
 /**

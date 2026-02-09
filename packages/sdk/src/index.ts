@@ -87,6 +87,15 @@ export { CustomClient } from './custom/client.js';
 export type { InterceptionResult } from './core/interceptor.js';
 export type { HistoryStats } from './core/history.js';
 
+// Explanation types
+export type {
+  ExplanationVerbosity,
+  ExplanationEntry,
+  DecisionExplanation,
+  ExplanationConfig,
+} from './types/explanation.js';
+export { redactValue, createEmptyExplanation } from './types/explanation.js';
+
 // Provider adapters (for converting to/from provider formats)
 export {
   toOpenAI,

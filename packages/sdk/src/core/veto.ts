@@ -21,6 +21,7 @@ import type {
   ValidationResult,
   LogLevel,
 } from '../types/config.js';
+import type { ExplanationConfig, ExplanationVerbosity } from '../types/explanation.js';
 import { createLogger, type Logger } from '../utils/logger.js';
 import { generateToolCallId } from '../utils/id.js';
 import { ValidationEngine } from './validator.js';
@@ -107,6 +108,10 @@ interface VetoConfigFile {
     directory?: string;
     recursive?: boolean;
   };
+  explanation?: {
+    verbosity?: ExplanationVerbosity;
+    redactPaths?: string[];
+  };
 }
 
 /**
@@ -162,6 +167,12 @@ export interface VetoOptions {
    * Injected kernel client for testing or custom configurations.
    */
   kernelClient?: KernelClient;
+
+  /**
+   * Explanation configuration for decision provenance.
+   * Override verbosity and redaction settings.
+   */
+  explanation?: ExplanationConfig;
 }
 
 /**
@@ -209,6 +220,9 @@ export class Veto {
   // Custom provider client (lazy initialized)
   private customClient: CustomClient | null = null;
   private readonly customConfig: CustomConfig | null;
+
+  // Explanation config
+  private readonly explanationConfig: ExplanationConfig;
 
   // Loaded rules
   private readonly rules: LoadedRulesState;
@@ -269,6 +283,12 @@ export class Veto {
       this.customConfig = null;
     }
 
+    // Resolve explanation config
+    this.explanationConfig = options.explanation ?? {
+      verbosity: config.explanation?.verbosity ?? 'none',
+      redactPaths: config.explanation?.redactPaths,
+    };
+
     // Resolve tracking options
     this.sessionId = options.sessionId ?? process.env.VETO_SESSION_ID;
     this.agentId = options.agentId ?? process.env.VETO_AGENT_ID;
@@ -289,6 +309,7 @@ export class Veto {
     this.validationEngine = new ValidationEngine({
       logger: this.logger,
       defaultDecision,
+      explanation: this.explanationConfig,
     });
 
     // Add the rule validator based on validation mode
@@ -983,6 +1004,7 @@ export class Veto {
   wrapTool<T extends { name: string }>(tool: T): T {
     const toolName = tool.name;
     const toolAny = tool as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const veto = this;
 
     // For LangChain tools, we need to wrap the 'func' property

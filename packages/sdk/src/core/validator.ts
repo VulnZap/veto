@@ -14,6 +14,16 @@ import type {
 } from '../types/config.js';
 import { normalizeValidator } from '../types/config.js';
 import type { Logger } from '../utils/logger.js';
+import type {
+  DecisionExplanation,
+  ExplanationConfig,
+  ExplanationEntry,
+} from '../types/explanation.js';
+import {
+  DEFAULT_EXPLANATION_CONFIG,
+  createEmptyExplanation,
+  redactValue,
+} from '../types/explanation.js';
 
 /**
  * Options for the validation engine.
@@ -23,6 +33,8 @@ export interface ValidationEngineOptions {
   logger: Logger;
   /** Default decision when no validators match */
   defaultDecision: 'allow' | 'deny' | 'modify';
+  /** Explanation configuration (defaults to verbosity "none") */
+  explanation?: ExplanationConfig;
 }
 
 /**
@@ -39,6 +51,8 @@ export interface AggregatedValidationResult {
   }>;
   /** Total duration of validation in milliseconds */
   totalDurationMs: number;
+  /** Decision explanation (present when verbosity is not "none") */
+  explanation?: DecisionExplanation;
 }
 
 /**
@@ -48,10 +62,26 @@ export class ValidationEngine {
   private readonly validators: NamedValidator[] = [];
   private readonly logger: Logger;
   private readonly defaultDecision: 'allow' | 'deny' | 'modify';
+  private explanationConfig: ExplanationConfig;
 
   constructor(options: ValidationEngineOptions) {
     this.logger = options.logger;
     this.defaultDecision = options.defaultDecision;
+    this.explanationConfig = options.explanation ?? { ...DEFAULT_EXPLANATION_CONFIG };
+  }
+
+  /**
+   * Update explanation configuration at runtime.
+   */
+  setExplanationConfig(config: ExplanationConfig): void {
+    this.explanationConfig = config;
+  }
+
+  /**
+   * Get the current explanation configuration.
+   */
+  getExplanationConfig(): ExplanationConfig {
+    return this.explanationConfig;
   }
 
   /**
@@ -130,6 +160,11 @@ export class ValidationEngine {
   async validate(context: ValidationContext): Promise<AggregatedValidationResult> {
     const startTime = performance.now();
     const validatorResults: AggregatedValidationResult['validatorResults'] = [];
+    const verbosity = this.explanationConfig.verbosity;
+    const collecting = verbosity !== 'none';
+    const trace: ExplanationEntry[] = [];
+    let evaluatedRules = 0;
+    let matchedRules = 0;
 
     // Get validators that apply to this tool
     const applicableValidators = this.getApplicableValidators(context.toolName);
@@ -146,10 +181,15 @@ export class ValidationEngine {
       this.logger.debug('No applicable validators, using default decision', {
         decision: this.defaultDecision,
       });
+      const totalDurationMs = performance.now() - startTime;
+      const explanation = collecting
+        ? createEmptyExplanation(this.defaultDecision, 'No applicable validators', totalDurationMs)
+        : undefined;
       return {
         finalResult: defaultResult,
         validatorResults: [],
-        totalDurationMs: performance.now() - startTime,
+        totalDurationMs,
+        explanation,
       };
     }
 
@@ -159,6 +199,7 @@ export class ValidationEngine {
     // Run validators in sequence
     for (const validator of applicableValidators) {
       const validatorStart = performance.now();
+      evaluatedRules++;
 
       try {
         const result = await validator.validate(currentContext);
@@ -175,6 +216,18 @@ export class ValidationEngine {
           decision: result.decision,
           durationMs: Math.round(durationMs * 100) / 100,
         });
+
+        // Collect trace entries when explanation is enabled
+        if (collecting) {
+          const isMatch = result.decision === 'deny' || result.decision === 'modify';
+          if (isMatch) matchedRules++;
+
+          if (verbosity === 'verbose' || isMatch) {
+            trace.push(
+              ...this.buildTraceEntries(validator, result)
+            );
+          }
+        }
 
         // Handle different decisions
         if (result.decision === 'deny') {
@@ -212,15 +265,31 @@ export class ValidationEngine {
           error instanceof Error ? error : new Error(errorMessage)
         );
 
+        const denyResult: ValidationResult = {
+          decision: 'deny',
+          reason: `Validator error: ${errorMessage}`,
+        };
+
         // Treat validator errors as denials for safety
         validatorResults.push({
           validatorName: validator.name,
-          result: {
-            decision: 'deny',
-            reason: `Validator error: ${errorMessage}`,
-          },
+          result: denyResult,
           durationMs,
         });
+
+        if (collecting) {
+          matchedRules++;
+          trace.push({
+            ruleId: validator.name,
+            ruleName: validator.description,
+            constraint: 'validator.error',
+            path: '',
+            expected: 'no error',
+            actual: errorMessage,
+            result: 'fail',
+            message: `Validator "${validator.name}" threw: ${errorMessage}`,
+          });
+        }
 
         finalResult = {
           decision: 'deny',
@@ -239,11 +308,99 @@ export class ValidationEngine {
       totalDurationMs: Math.round(totalDurationMs * 100) / 100,
     });
 
+    // Build explanation
+    let explanation: DecisionExplanation | undefined;
+    if (collecting) {
+      const redactPaths = this.explanationConfig.redactPaths ?? [];
+      const redactedTrace = redactPaths.length > 0
+        ? trace.map((entry) => ({
+            ...entry,
+            actual: redactValue(entry.actual, entry.path, redactPaths),
+            expected: redactValue(entry.expected, entry.path, redactPaths),
+          }))
+        : trace;
+
+      explanation = {
+        decision: finalResult.decision,
+        reason: finalResult.reason ?? 'No reason provided',
+        verbosity,
+        trace: redactedTrace,
+        evaluatedRules,
+        matchedRules,
+        evaluationTimeMs: totalDurationMs,
+        remediation: this.buildRemediation(finalResult, validatorResults),
+      };
+
+      // Attach explanation to the final result as well
+      finalResult = { ...finalResult, explanation };
+    }
+
     return {
       finalResult,
       validatorResults,
       totalDurationMs,
+      explanation,
     };
+  }
+
+  /**
+   * Build trace entries from a validator result.
+   */
+  private buildTraceEntries(
+    validator: NamedValidator,
+    result: ValidationResult
+  ): ExplanationEntry[] {
+    const entries: ExplanationEntry[] = [];
+    const decision = result.decision === 'deny' ? 'fail' : 'pass';
+
+    // If the result has metadata with matched_rules, produce entries per rule
+    const matchedRuleIds = result.metadata?.matched_rules as string[] | undefined;
+    if (matchedRuleIds && matchedRuleIds.length > 0) {
+      for (const ruleId of matchedRuleIds) {
+        entries.push({
+          ruleId,
+          ruleName: validator.description,
+          constraint: `${validator.name}.rule_match`,
+          path: `arguments`,
+          expected: `rule ${ruleId} passes`,
+          actual: result.reason ?? result.decision,
+          result: decision,
+          message: result.reason ?? `Rule ${ruleId} ${decision === 'pass' ? 'passed' : 'failed'}`,
+        });
+      }
+    } else {
+      // Single entry for the validator
+      entries.push({
+        ruleId: validator.name,
+        ruleName: validator.description,
+        constraint: `${validator.name}.decision`,
+        path: 'arguments',
+        expected: 'allow',
+        actual: result.decision,
+        result: decision,
+        message: result.reason ?? `Validator ${validator.name} returned ${result.decision}`,
+      });
+    }
+
+    return entries;
+  }
+
+  /**
+   * Build remediation suggestions from the validation results.
+   */
+  private buildRemediation(
+    finalResult: ValidationResult,
+    validatorResults: AggregatedValidationResult['validatorResults']
+  ): string[] | undefined {
+    if (finalResult.decision === 'allow') return undefined;
+
+    const suggestions: string[] = [];
+    for (const vr of validatorResults) {
+      if (vr.result.decision === 'deny' && vr.result.reason) {
+        suggestions.push(`Fix: ${vr.result.reason}`);
+      }
+    }
+    return suggestions.length > 0 ? suggestions : undefined;
   }
 
   /**

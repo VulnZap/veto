@@ -7,6 +7,8 @@
  */
 
 import { init } from './init.js';
+import { explain } from './explain.js';
+import type { ExplanationVerbosity } from '../types/explanation.js';
 
 const VERSION = '0.1.0';
 
@@ -22,17 +24,21 @@ Usage:
 
 Commands:
   init          Initialize Veto in the current directory
+  explain       Run validation and show decision explanation
   version       Show version information
   help          Show this help message
 
 Options:
-  --force, -f   Force overwrite existing files (init)
-  --quiet, -q   Suppress output
-  --help, -h    Show help
+  --force, -f         Force overwrite existing files (init)
+  --quiet, -q         Suppress output
+  --help, -h          Show help
+  --verbosity <level> Explanation verbosity: none, simple, verbose (default: verbose)
+  --redact <paths>    Comma-separated dot-paths to redact from explanation
 
 Examples:
-  veto init           Initialize Veto in current directory
-  veto init --force   Reinitialize, overwriting existing files
+  veto init                                Initialize Veto in current directory
+  veto init --force                        Reinitialize, overwriting existing files
+  veto explain send_email '{"to":"a@b.c"}' Show explanation for send_email validation
 `);
 }
 
@@ -49,14 +55,25 @@ function printVersion(): void {
 function parseArgs(args: string[]): {
   command: string;
   flags: Record<string, boolean>;
+  positional: string[];
+  stringFlags: Record<string, string>;
 } {
   const flags: Record<string, boolean> = {};
+  const stringFlags: Record<string, string> = {};
+  const positional: string[] = [];
   let command = '';
 
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg.startsWith('--')) {
       const flag = arg.slice(2);
-      flags[flag] = true;
+      if (flag === 'verbosity' || flag === 'redact') {
+        if (i + 1 < args.length) {
+          stringFlags[flag] = args[++i];
+        }
+      } else {
+        flags[flag] = true;
+      }
     } else if (arg.startsWith('-')) {
       const shortFlags = arg.slice(1).split('');
       for (const f of shortFlags) {
@@ -74,10 +91,12 @@ function parseArgs(args: string[]): {
       }
     } else if (!command) {
       command = arg;
+    } else {
+      positional.push(arg);
     }
   }
 
-  return { command, flags };
+  return { command, flags, positional, stringFlags };
 }
 
 /**
@@ -85,7 +104,7 @@ function parseArgs(args: string[]): {
  */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const { command, flags } = parseArgs(args);
+  const { command, flags, positional, stringFlags } = parseArgs(args);
 
   // Handle help flag
   if (flags['help'] || command === 'help') {
@@ -106,6 +125,27 @@ async function main(): Promise<void> {
         force: flags['force'],
         quiet: flags['quiet'],
       });
+      process.exit(result.success ? 0 : 1);
+      break;
+    }
+
+    case 'explain': {
+      if (positional.length < 2) {
+        console.error('Usage: veto explain <tool_name> <args_json> [--verbosity verbose] [--redact paths]');
+        process.exit(1);
+      }
+      const verbosity = (stringFlags['verbosity'] ?? 'verbose') as ExplanationVerbosity;
+      const redactPaths = stringFlags['redact'] ? stringFlags['redact'].split(',') : undefined;
+      const result = await explain({
+        toolName: positional[0],
+        argsJson: positional[1],
+        verbosity,
+        redactPaths,
+        quiet: flags['quiet'],
+      });
+      if (!result.success) {
+        console.error(result.error);
+      }
       process.exit(result.success ? 0 : 1);
       break;
     }

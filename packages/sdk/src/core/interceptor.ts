@@ -16,6 +16,7 @@ import type {
   ValidationContext,
   ValidationResult,
 } from '../types/config.js';
+import type { DecisionExplanation } from '../types/explanation.js';
 import type { Logger } from '../utils/logger.js';
 import type { ValidationEngine, AggregatedValidationResult } from './validator.js';
 import type { HistoryTracker } from './history.js';
@@ -61,6 +62,8 @@ export interface InterceptionResult {
   originalCall: ToolCall;
   /** The potentially modified arguments */
   finalArguments: Record<string, unknown>;
+  /** Decision explanation (shortcut for aggregatedResult.explanation) */
+  explanation?: DecisionExplanation;
 }
 
 /**
@@ -169,7 +172,8 @@ export class Interceptor {
         call.name,
         call.arguments,
         validationResult,
-        aggregatedResult.totalDurationMs
+        aggregatedResult.totalDurationMs,
+        aggregatedResult.explanation
       );
     }
 
@@ -218,6 +222,7 @@ export class Interceptor {
       aggregatedResult,
       originalCall: call,
       finalArguments,
+      explanation: aggregatedResult.explanation,
     };
   }
 

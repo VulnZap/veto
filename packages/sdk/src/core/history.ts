@@ -11,6 +11,7 @@ import type {
   ToolCallHistoryEntry,
   ValidationResult,
 } from '../types/config.js';
+import type { DecisionExplanation } from '../types/explanation.js';
 import type { Logger } from '../utils/logger.js';
 
 /**
@@ -78,15 +79,20 @@ export class HistoryTracker {
     toolName: string,
     args: Record<string, unknown>,
     result: ValidationResult,
-    durationMs?: number
+    durationMs?: number,
+    explanation?: DecisionExplanation
   ): void {
-    this.add({
+    const entry: ToolCallHistoryEntry = {
       toolName,
       arguments: args,
       validationResult: result,
       timestamp: new Date(),
       durationMs,
-    });
+    };
+    if (explanation) {
+      entry.validationResult = { ...result, explanation };
+    }
+    this.add(entry);
   }
 
   /**
