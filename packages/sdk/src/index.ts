@@ -110,5 +110,13 @@ export type {
   GoogleFunctionCall,
 } from './providers/types.js';
 
+// WASM decision engine
+export { WasmDecisionEngine } from './wasm/engine.js';
+export type {
+  CompiledPolicy,
+  EvaluationResult,
+  WasmEngineConfig,
+} from './wasm/types.js';
+
 // CLI init function (for programmatic use)
 export { init, isInitialized } from './cli/init.js';

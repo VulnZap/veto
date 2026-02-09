@@ -37,6 +37,8 @@ import type { KernelConfig, KernelToolCall } from '../kernel/types.js';
 import { KernelClient } from '../kernel/client.js';
 import type { CustomConfig, CustomToolCall, CustomResponse } from '../custom/types.js';
 import { CustomClient } from '../custom/client.js';
+import { WasmDecisionEngine } from '../wasm/engine.js';
+import type { WasmEngineConfig } from '../wasm/types.js';
 
 /**
  * Veto operating mode.
@@ -51,7 +53,7 @@ export type VetoMode = 'strict' | 'log';
  * - "kernel": Use local kernel model via Ollama
  * - "custom": Use custom LLM provider (OpenAI, Anthropic, Gemini, OpenRouter)
  */
-export type ValidationMode = 'api' | 'kernel' | 'custom';
+export type ValidationMode = 'api' | 'kernel' | 'custom' | 'wasm';
 
 /**
  * Wrapped handler function type.
@@ -99,6 +101,15 @@ interface VetoConfigFile {
     maxTokens?: number;
     timeout?: number;
     baseUrl?: string;
+  };
+  wasm?: {
+    maxStackDepth?: number;
+    maxInstructions?: number;
+    maxCachedPolicies?: number;
+    cacheTtlMs?: number;
+    policySyncUrl?: string;
+    syncIntervalMs?: number;
+    syncApiKey?: string;
   };
   logging?: {
     level?: LogLevel;
@@ -210,6 +221,10 @@ export class Veto {
   private customClient: CustomClient | null = null;
   private readonly customConfig: CustomConfig | null;
 
+  // WASM decision engine (lazy initialized)
+  private wasmEngine: WasmDecisionEngine | null = null;
+  private readonly wasmConfig: WasmEngineConfig | null;
+
   // Loaded rules
   private readonly rules: LoadedRulesState;
 
@@ -269,6 +284,21 @@ export class Veto {
       this.customConfig = null;
     }
 
+    // Resolve WASM engine configuration
+    if (this.validationMode === 'wasm') {
+      this.wasmConfig = {
+        maxStackDepth: config.wasm?.maxStackDepth,
+        maxInstructions: config.wasm?.maxInstructions,
+        maxCachedPolicies: config.wasm?.maxCachedPolicies,
+        cacheTtlMs: config.wasm?.cacheTtlMs,
+        policySyncUrl: config.wasm?.policySyncUrl,
+        syncIntervalMs: config.wasm?.syncIntervalMs,
+        syncApiKey: config.wasm?.syncApiKey,
+      };
+    } else {
+      this.wasmConfig = null;
+    }
+
     // Resolve tracking options
     this.sessionId = options.sessionId ?? process.env.VETO_SESSION_ID;
     this.agentId = options.agentId ?? process.env.VETO_AGENT_ID;
@@ -292,16 +322,21 @@ export class Veto {
     });
 
     // Add the rule validator based on validation mode
+    const validatorDescriptions: Record<ValidationMode, string> = {
+      kernel: 'Validates tool calls via local kernel model',
+      custom: `Validates tool calls via ${this.customConfig?.provider ?? 'custom'} LLM`,
+      api: 'Validates tool calls via external API',
+      wasm: 'Validates tool calls via local WASM decision engine',
+    };
+
     this.validationEngine.addValidator({
       name: 'veto-rule-validator',
-      description: this.validationMode === 'kernel'
-        ? 'Validates tool calls via local kernel model'
-        : this.validationMode === 'custom'
-          ? `Validates tool calls via ${this.customConfig?.provider ?? 'custom'} LLM`
-          : 'Validates tool calls via external API',
+      description: validatorDescriptions[this.validationMode],
       priority: 50,
       validate: (ctx) => {
-        if (this.validationMode === 'kernel') {
+        if (this.validationMode === 'wasm') {
+          return this.validateWithWasm(ctx);
+        } else if (this.validationMode === 'kernel') {
           return this.validateWithKernel(ctx);
         } else if (this.validationMode === 'custom') {
           return this.validateWithCustom(ctx);
@@ -792,6 +827,88 @@ export class Veto {
   }
 
   /**
+   * Get or create the WASM decision engine.
+   */
+  private getWasmEngine(): WasmDecisionEngine {
+    if (this.wasmEngine) {
+      return this.wasmEngine;
+    }
+
+    this.wasmEngine = new WasmDecisionEngine(this.wasmConfig ?? undefined);
+    this.wasmEngine.init();
+    return this.wasmEngine;
+  }
+
+  /**
+   * Validate a tool call using the local WASM decision engine.
+   */
+  private async validateWithWasm(context: ValidationContext): Promise<ValidationResult> {
+    const rules = this.getRulesForTool(context.toolName);
+
+    if (rules.length === 0) {
+      this.logger.debug('No rules for tool, allowing', { tool: context.toolName });
+      return { decision: 'allow' };
+    }
+
+    try {
+      const engine = this.getWasmEngine();
+
+      // Compile and load rules if not already cached
+      if (!engine.hasCachedPolicy(context.toolName)) {
+        engine.loadRules(context.toolName, rules);
+      }
+
+      const result = engine.evaluate(context.toolName, context.arguments);
+
+      this.logger.debug('WASM engine evaluated tool call', {
+        tool: context.toolName,
+        decision: result.decision,
+        latencyUs: Math.round(result.latencyNs / 1000),
+        matchedRules: result.matchedRules,
+      });
+
+      if (result.decision === 'deny') {
+        if (this.mode === 'log') {
+          this.logger.warn('Tool call would be blocked (log mode)', {
+            tool: context.toolName,
+            reason: result.reason,
+          });
+          return {
+            decision: 'allow',
+            reason: `[LOG MODE] Would block: ${result.reason}`,
+            metadata: { blocked_in_strict_mode: true, wasm_latency_ns: result.latencyNs },
+          };
+        }
+
+        this.logger.warn('Tool call blocked by WASM engine', {
+          tool: context.toolName,
+          reason: result.reason,
+        });
+        return {
+          decision: 'deny',
+          reason: result.reason,
+          metadata: { matched_rules: result.matchedRules, wasm_latency_ns: result.latencyNs },
+        };
+      }
+
+      return {
+        decision: 'allow',
+        reason: result.reason,
+        metadata: { matched_rules: result.matchedRules, wasm_latency_ns: result.latencyNs },
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn('WASM engine failed, falling back to standard validation', {
+        tool: context.toolName,
+        error: reason,
+      });
+
+      // Fallback to API validation
+      return this.validateWithAPI(context);
+    }
+  }
+
+  /**
    * Get or create the custom provider client.
    */
   private getCustomClient(): CustomClient {
@@ -983,7 +1100,6 @@ export class Veto {
   wrapTool<T extends { name: string }>(tool: T): T {
     const toolName = tool.name;
     const toolAny = tool as Record<string, unknown>;
-    const veto = this;
 
     // For LangChain tools, we need to wrap the 'func' property
     // and also override 'invoke' to ensure validation happens
@@ -996,8 +1112,7 @@ export class Veto {
 
       // Create wrapped func that validates before executing
       const wrappedFunc = async (input: Record<string, unknown>): Promise<unknown> => {
-        // Validate with Veto
-        const result = await veto.validateToolCall({
+        const result = await this.validateToolCall({
           id: generateToolCallId(),
           name: toolName,
           arguments: input,
@@ -1011,7 +1126,6 @@ export class Veto {
           );
         }
 
-        // Execute the original function with potentially modified arguments
         const finalArgs = result.finalArguments ?? input;
         return originalFunc.call(tool, finalArgs);
       };
@@ -1022,9 +1136,8 @@ export class Veto {
       // Override invoke to use our wrapped func
       if (typeof toolAny.invoke === 'function') {
         const originalInvoke = toolAny.invoke as (...args: unknown[]) => Promise<unknown>;
-        wrapped.invoke = async function (input: Record<string, unknown>, ...rest: unknown[]): Promise<unknown> {
-          // Validate with Veto first
-          const result = await veto.validateToolCall({
+        wrapped.invoke = async (input: Record<string, unknown>, ...rest: unknown[]): Promise<unknown> => {
+          const result = await this.validateToolCall({
             id: generateToolCallId(),
             name: toolName,
             arguments: input,
@@ -1038,13 +1151,12 @@ export class Veto {
             );
           }
 
-          // Call original invoke with potentially modified arguments
           const finalArgs = result.finalArguments ?? input;
           return originalInvoke.call(tool, finalArgs, ...rest);
         };
       }
 
-      veto.logger.debug('Tool wrapped', { name: toolName });
+      this.logger.debug('Tool wrapped', { name: toolName });
       return wrapped as T;
     }
 
@@ -1066,7 +1178,7 @@ export class Veto {
             callArgs = { args };
           }
 
-          const result = await veto.validateToolCall({
+          const result = await this.validateToolCall({
             id: generateToolCallId(),
             name: toolName,
             arguments: callArgs,
@@ -1088,13 +1200,13 @@ export class Veto {
         };
 
         wrapped[key] = wrappedFunc;
-        veto.logger.debug('Tool wrapped', { name: toolName });
+        this.logger.debug('Tool wrapped', { name: toolName });
         return wrapped as T;
       }
     }
 
     // No wrappable function found, return as-is
-    veto.logger.warn('No wrappable function found on tool', { name: toolName });
+    this.logger.warn('No wrappable function found on tool', { name: toolName });
     return tool;
   }
 
