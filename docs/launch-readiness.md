@@ -59,7 +59,7 @@ Run `scripts/launch-metrics.sh` to collect current values.
 
 ## Weekly Status Template
 
-```
+```markdown
 ## Week of YYYY-MM-DD
 
 ### Completed

@@ -14,7 +14,11 @@ echo ""
 # --- TS SDK Tests ---
 echo "--- TS SDK Tests ---"
 cd "$REPO_ROOT"
-TEST_OUTPUT=$(pnpm test 2>&1) || true
+TEST_EXIT_CODE=0
+TEST_OUTPUT=$(pnpm test 2>&1) || TEST_EXIT_CODE=$?
+if [ "$TEST_EXIT_CODE" -ne 0 ]; then
+  echo "⚠️  Tests exited with code $TEST_EXIT_CODE"
+fi
 TESTS_PASSED=$(echo "$TEST_OUTPUT" | grep "^.*Tests " | grep -oE '[0-9]+ passed' || echo "0 passed")
 TEST_FILES=$(echo "$TEST_OUTPUT" | grep "Test Files" | grep -oE '[0-9]+ passed' || echo "0 passed")
 echo "Tests: $TESTS_PASSED | Files: $TEST_FILES"
@@ -67,9 +71,13 @@ PYEOF
 fi
 if [ -f "$PYTHON_DIR/pyproject.toml" ]; then
   python3 - "$PYTHON_DIR/pyproject.toml" <<'PYEOF'
-import tomllib, sys
+import sys
+try:
+    import tomllib as toml
+except ModuleNotFoundError:
+    import tomli as toml
 with open(sys.argv[1], "rb") as f:
-    d = tomllib.load(f)
+    d = toml.load(f)
 deps = d.get("project", {}).get("dependencies", [])
 names = ", ".join(deps)
 print(f"Python SDK runtime: {len(deps)} ({names})")
@@ -80,12 +88,12 @@ fi
 echo ""
 echo "--- Source Lines ---"
 if [ -d "$SDK_DIR/src" ]; then
-  TS_LINES=$(find "$SDK_DIR/src" -name "*.ts" -not -name "*.test.ts" -not -name "*.spec.ts" | xargs wc -l 2>/dev/null | tail -1 | tr -d ' ' | cut -d't' -f1)
+  TS_LINES=$(find "$SDK_DIR/src" -name "*.ts" -not -name "*.test.ts" -not -name "*.spec.ts" -exec wc -l {} + 2>/dev/null | awk 'END {print $1+0}')
   TS_FILES=$(find "$SDK_DIR/src" -name "*.ts" -not -name "*.test.ts" -not -name "*.spec.ts" | wc -l | tr -d ' ')
   echo "TS SDK: $TS_LINES lines across $TS_FILES files"
 fi
 if [ -d "$PYTHON_DIR/veto" ]; then
-  PY_LINES=$(find "$PYTHON_DIR/veto" -name "*.py" | xargs wc -l 2>/dev/null | tail -1 | tr -d ' ' | cut -d't' -f1)
+  PY_LINES=$(find "$PYTHON_DIR/veto" -name "*.py" -exec wc -l {} + 2>/dev/null | awk 'END {print $1+0}')
   PY_FILES=$(find "$PYTHON_DIR/veto" -name "*.py" | wc -l | tr -d ' ')
   echo "Python SDK: $PY_LINES lines across $PY_FILES files"
 fi
