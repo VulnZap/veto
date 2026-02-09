@@ -99,6 +99,10 @@
     "./benchmark": {
       "types": "./dist/benchmark/index.d.ts",
       "import": "./dist/benchmark/index.js"
+    },
+    "./generator": {
+      "types": "./dist/generator/index.d.ts",
+      "import": "./dist/generator/index.js"
     }
   },
   "dependencies": {

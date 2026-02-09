@@ -14,3 +14,8 @@ export {
   type LoadConfigOptions,
 } from './config.js';
 export { DEFAULT_CONFIG, DEFAULT_RULES } from './templates.js';
+export {
+  runGenerate,
+  type GenerateOptions,
+  type GenerateResult,
+} from './generate.js';

@@ -7,6 +7,7 @@
  */
 
 import { init } from './init.js';
+import { runGenerate } from './generate.js';
 
 const VERSION = '0.1.0';
 
@@ -22,17 +23,24 @@ Usage:
 
 Commands:
   init          Initialize Veto in the current directory
+  generate      Generate a policy from a natural language description
   version       Show version information
   help          Show this help message
 
 Options:
-  --force, -f   Force overwrite existing files (init)
-  --quiet, -q   Suppress output
-  --help, -h    Show help
+  --force, -f        Force overwrite existing files (init)
+  --quiet, -q        Suppress output
+  --help, -h         Show help
+  --provider <name>  LLM provider: openai, anthropic, gemini, openrouter (generate)
+  --model <name>     Model identifier (generate)
+  --output <path>    Output file path (generate)
+  --with-tests       Generate test cases alongside policy (generate)
 
 Examples:
   veto init           Initialize Veto in current directory
   veto init --force   Reinitialize, overwriting existing files
+  veto generate "Block send_email to external domains" --provider openai
+  veto generate "Block rm -rf commands" --provider anthropic --output policy.yaml --with-tests
 `);
 }
 
@@ -49,14 +57,25 @@ function printVersion(): void {
 function parseArgs(args: string[]): {
   command: string;
   flags: Record<string, boolean>;
+  values: Record<string, string>;
+  positional: string[];
 } {
   const flags: Record<string, boolean> = {};
+  const values: Record<string, string> = {};
+  const positional: string[] = [];
   let command = '';
 
-  for (const arg of args) {
+  const VALUE_FLAGS = ['provider', 'model', 'output'];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg.startsWith('--')) {
       const flag = arg.slice(2);
-      flags[flag] = true;
+      if (VALUE_FLAGS.includes(flag) && i + 1 < args.length) {
+        values[flag] = args[++i];
+      } else {
+        flags[flag] = true;
+      }
     } else if (arg.startsWith('-')) {
       const shortFlags = arg.slice(1).split('');
       for (const f of shortFlags) {
@@ -74,10 +93,12 @@ function parseArgs(args: string[]): {
       }
     } else if (!command) {
       command = arg;
+    } else {
+      positional.push(arg);
     }
   }
 
-  return { command, flags };
+  return { command, flags, values, positional };
 }
 
 /**
@@ -85,7 +106,7 @@ function parseArgs(args: string[]): {
  */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const { command, flags } = parseArgs(args);
+  const { command, flags, values, positional } = parseArgs(args);
 
   // Handle help flag
   if (flags['help'] || command === 'help') {
@@ -104,6 +125,32 @@ async function main(): Promise<void> {
     case 'init': {
       const result = await init({
         force: flags['force'],
+        quiet: flags['quiet'],
+      });
+      process.exit(result.success ? 0 : 1);
+      break;
+    }
+
+    case 'generate': {
+      const description = positional[0];
+      if (!description) {
+        console.error('Usage: veto generate "<description>" --provider <provider>');
+        process.exit(1);
+      }
+
+      const provider = values['provider'];
+      if (!provider) {
+        console.error('Error: --provider is required for generate command.');
+        console.error('Valid providers: openai, anthropic, gemini, openrouter');
+        process.exit(1);
+      }
+
+      const result = await runGenerate({
+        description,
+        provider,
+        model: values['model'],
+        output: values['output'],
+        withTests: flags['with-tests'],
         quiet: flags['quiet'],
       });
       process.exit(result.success ? 0 : 1);
