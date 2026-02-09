@@ -115,6 +115,29 @@ describe('BrowserSanitizer', () => {
       expect(matches[0].hidingMethod).toBe('opacity-zero');
     });
 
+    it('detects opacity:0.0', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity:0.0">Hidden via opacity zero decimal</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('opacity-zero');
+    });
+
+    it('detects opacity:0.00', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity:0.00">Hidden via opacity double zero decimal</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('opacity-zero');
+    });
+
+    it('does not match opacity values like 0.1 or 0.5', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity:0.1">Partially visible</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(0);
+    });
+
     it('detects offscreen positioning', () => {
       const s = createSanitizer();
       const matches = s.detectHiddenElements(HIDDEN_OFFSCREEN);
@@ -338,6 +361,7 @@ describe('BrowserSanitizer', () => {
         expect(entry.description).toBeTruthy();
         expect(typeof entry.offset).toBe('number');
         expect(typeof entry.length).toBe('number');
+        expect(typeof entry.isSuspicious).toBe('boolean');
       }
     });
 
@@ -365,6 +389,29 @@ describe('BrowserSanitizer', () => {
       const entry = result.report.entries.find((e) => e.category === 'hidden-element');
       expect(entry?.content).toBe(longText);
     });
+
+    it('sets isSuspicious flag correctly on entries', () => {
+      const s = createSanitizer('strict');
+      const result = s.sanitize(HIDDEN_DISPLAY_NONE);
+      const entry = result.report.entries.find((e) => e.category === 'hidden-element');
+      expect(entry?.isSuspicious).toBe(true);
+    });
+
+    it('sets isSuspicious=false for benign hidden elements', () => {
+      const s = createSanitizer('strict');
+      const result = s.sanitize(HIDDEN_BENIGN);
+      const entry = result.report.entries.find((e) => e.category === 'hidden-element');
+      expect(entry?.isSuspicious).toBe(false);
+    });
+
+    it('counts suspiciousPatternCount using structured flags', () => {
+      const s = createSanitizer('strict');
+      // This has 1 suspicious comment and 2 suspicious hidden elements
+      const result = s.sanitize(MIXED_INJECTION);
+      // Verify suspiciousPatternCount matches entries with isSuspicious=true
+      const suspiciousEntries = result.report.entries.filter((e) => e.isSuspicious);
+      expect(result.report.suspiciousPatternCount).toBe(suspiciousEntries.length);
+    });
   });
 
   describe('visible suspicious patterns', () => {
@@ -374,6 +421,7 @@ describe('BrowserSanitizer', () => {
       const flagged = result.report.entries.filter((e) => e.category === 'suspicious-pattern');
       expect(flagged.length).toBeGreaterThan(0);
       expect(flagged[0].action).toBe('flagged');
+      expect(flagged[0].isSuspicious).toBe(true);
     });
   });
 
@@ -404,6 +452,83 @@ describe('BrowserSanitizer', () => {
       const result = s.sanitize(html);
       expect(result.sanitized).toContain('Visible content');
       expect(result.modified).toBe(false);
+    });
+
+    it('removes all occurrences of duplicate hidden elements', () => {
+      // Test for the global replacement fix
+      const duplicateHtml = `<div style="display:none">SECRET</div><p>middle</p><div style="display:none">SECRET</div>`;
+      const s = createSanitizer('strict');
+      const result = s.sanitize(duplicateHtml);
+      expect(result.sanitized).toBe('<p>middle</p>');
+      expect(result.sanitized).not.toContain('SECRET');
+    });
+
+    it('removes all occurrences of duplicate comments', () => {
+      const duplicateComments = `<!-- INJECT -->text<!-- INJECT -->`;
+      const s = createSanitizer('strict');
+      const result = s.sanitize(duplicateComments);
+      expect(result.sanitized).toBe('text');
+      expect(result.sanitized).not.toContain('INJECT');
+    });
+
+    it('handles pathological input for stripHtmlTags without hanging', () => {
+      // Test ReDoS guard - create input that could cause polynomial regex time
+      const pathologicalInput = `<div style="display:none">${'<'.repeat(10000)}some text</div>`;
+      const s = createSanitizer('strict');
+      const start = Date.now();
+      const result = s.sanitize(pathologicalInput);
+      const elapsed = Date.now() - start;
+      // Should complete in reasonable time (under 5 seconds)
+      expect(elapsed).toBeLessThan(5000);
+      expect(result.modified).toBe(true);
+    });
+  });
+
+  describe('opacity regex edge cases', () => {
+    it('detects opacity: 0 with space', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity: 0">Hidden</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('opacity-zero');
+    });
+
+    it('detects opacity:0; with semicolon', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity:0; color: red">Hidden</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('opacity-zero');
+    });
+
+    it('detects opacity:0.0; with semicolon', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity:0.0; color: red">Hidden</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('opacity-zero');
+    });
+
+    it('detects opacity:0.000 with multiple zeros', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity:0.000">Hidden</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('opacity-zero');
+    });
+
+    it('does not match opacity:0.5', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity:0.5">Semi-transparent</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(0);
+    });
+
+    it('does not match opacity:10', () => {
+      const s = createSanitizer();
+      const html = `<div style="opacity:10">Invalid but not zero</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(0);
     });
   });
 });

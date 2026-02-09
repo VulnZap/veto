@@ -51,6 +51,8 @@ export interface SanitizationEntry {
   offset: number;
   /** Length of the detected content in the original HTML */
   length: number;
+  /** Whether this entry contains suspicious/injection-like content (structured flag for counting) */
+  isSuspicious: boolean;
 }
 
 /**
@@ -109,7 +111,7 @@ export interface SanitizationReport {
   zeroWidthCharCount: number;
   /** Number of HTML comments detected */
   htmlCommentCount: number;
-  /** Number of suspicious patterns detected */
+  /** Number of suspicious patterns detected (via structured isSuspicious flags) */
   suspiciousPatternCount: number;
   /** Total items stripped */
   strippedCount: number;

@@ -22,6 +22,8 @@ import type {
 
 const DEFAULT_MAX_CONTENT_LENGTH = 5 * 1024 * 1024; // 5MB
 const DEFAULT_MAX_AUDIT_CONTENT_LENGTH = 200;
+/** Maximum length for stripHtmlTags input to guard against ReDoS */
+const MAX_STRIP_HTML_INPUT_LENGTH = 100_000;
 
 /**
  * Zero-width and invisible Unicode characters commonly used to hide content.
@@ -66,7 +68,8 @@ const HTML_COMMENT_REGEX = /<!--[\s\S]*?-->/g;
 const HIDDEN_STYLE_PATTERNS: ReadonlyArray<{ method: HidingMethod; pattern: RegExp }> = [
   { method: 'display-none', pattern: /display\s*:\s*none/i },
   { method: 'visibility-hidden', pattern: /visibility\s*:\s*hidden/i },
-  { method: 'opacity-zero', pattern: /opacity\s*:\s*0(?:[;\s"']|$)/i },
+  // Match opacity: 0, 0.0, 0.00, etc.
+  { method: 'opacity-zero', pattern: /opacity\s*:\s*0(?:\.0+)?(?:[;\s"']|$)/i },
   { method: 'offscreen-position', pattern: /position\s*:\s*(?:absolute|fixed)[^"]*(?:left|top|right|bottom)\s*:\s*-\d{4,}/i },
   { method: 'zero-size', pattern: /(?:width|height)\s*:\s*0(?:px)?\s*[;\s"']/i },
   { method: 'clip-hidden', pattern: /clip\s*:\s*rect\s*\(\s*0/i },
@@ -115,14 +118,39 @@ function truncate(s: string, maxLen: number): string {
   return s.slice(0, maxLen) + '...';
 }
 
+/**
+ * Strip HTML tags from a string.
+ * Guards against pathological input by truncating before processing.
+ */
 function stripHtmlTags(html: string): string {
-  return html.replace(/<[^>]*>/g, '').trim();
+  // Guard against pathological input that could cause ReDoS
+  const input = html.length > MAX_STRIP_HTML_INPUT_LENGTH
+    ? html.slice(0, MAX_STRIP_HTML_INPUT_LENGTH)
+    : html;
+  return input.replace(/<[^>]*>/g, '').trim();
 }
 
 function codepoint(char: string): string {
   const cp = char.codePointAt(0);
   if (cp === undefined) return 'U+????';
   return `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
+}
+
+/**
+ * Escape special regex characters in a string for use as a literal pattern.
+ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Remove all occurrences of a literal string from input.
+ * Uses global regex to ensure deterministic, complete removal.
+ */
+function removeAllOccurrences(input: string, target: string): string {
+  if (!target) return input;
+  const escaped = escapeRegExp(target);
+  return input.replace(new RegExp(escaped, 'g'), '');
 }
 
 /**
@@ -160,10 +188,17 @@ export class BrowserSanitizer {
     const entries: SanitizationEntry[] = [];
     let output = html;
 
+    // Track suspicious counts explicitly via structured flags
+    let hiddenSuspiciousCount = 0;
+    let commentSuspiciousCount = 0;
+
     // Phase 1: Detect and handle hidden elements
     const hiddenMatches = this.detectHiddenElements(html);
     for (const match of hiddenMatches) {
       const action = this.resolveHiddenAction(match);
+      if (match.isSuspicious) {
+        hiddenSuspiciousCount++;
+      }
       entries.push({
         category: 'hidden-element',
         action,
@@ -171,9 +206,10 @@ export class BrowserSanitizer {
         content: this.auditContent(match.textContent),
         offset: match.offset,
         length: match.outerHtml.length,
+        isSuspicious: match.isSuspicious,
       });
       if (action === 'stripped') {
-        output = output.replace(match.outerHtml, '');
+        output = removeAllOccurrences(output, match.outerHtml);
       }
     }
 
@@ -181,6 +217,9 @@ export class BrowserSanitizer {
     const commentMatches = this.detectHtmlComments(html);
     for (const match of commentMatches) {
       const action = this.resolveCommentAction(match);
+      if (match.isSuspicious) {
+        commentSuspiciousCount++;
+      }
       entries.push({
         category: 'html-comment',
         action,
@@ -188,9 +227,10 @@ export class BrowserSanitizer {
         content: this.auditContent(match.body),
         offset: match.offset,
         length: match.fullMatch.length,
+        isSuspicious: match.isSuspicious,
       });
       if (action === 'stripped') {
-        output = output.replace(match.fullMatch, '');
+        output = removeAllOccurrences(output, match.fullMatch);
       }
     }
 
@@ -206,6 +246,7 @@ export class BrowserSanitizer {
         content: codepoint(match.codepoint),
         offset: match.offset,
         length: 1,
+        isSuspicious: false,
       });
     }
     if (zwMatches.length > 0 && this.resolveZeroWidthAction() === 'stripped') {
@@ -222,10 +263,15 @@ export class BrowserSanitizer {
         content: this.auditContent(sp.match),
         offset: sp.offset,
         length: sp.match.length,
+        isSuspicious: true,
       });
     }
 
     const durationMs = performance.now() - start;
+
+    // Calculate suspiciousPatternCount using structured isSuspicious flags
+    const suspiciousPatternCount =
+      suspiciousInVisible.length + hiddenSuspiciousCount + commentSuspiciousCount;
 
     const report: SanitizationReport = {
       mode: this.mode,
@@ -234,9 +280,7 @@ export class BrowserSanitizer {
       hiddenElementCount: hiddenMatches.length,
       zeroWidthCharCount: zwMatches.length,
       htmlCommentCount: commentMatches.length,
-      suspiciousPatternCount: suspiciousInVisible.length + entries.filter(
-        (e) => e.category === 'hidden-element' && e.description.includes('suspicious')
-      ).length,
+      suspiciousPatternCount,
       strippedCount: entries.filter((e) => e.action === 'stripped').length,
       flaggedCount: entries.filter((e) => e.action === 'flagged').length,
       entries,
