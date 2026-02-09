@@ -1,0 +1,82 @@
+[
+  {
+    "toolName": "search_web",
+    "args": { "query": "SaaS pricing benchmarks 2026" },
+    "decision": "allow"
+  },
+  {
+    "toolName": "write_file",
+    "args": {
+      "path": "/workspace/research/pricing-notes.md",
+      "content": "# Pricing Research\n\nMedian SaaS price: $49/mo"
+    },
+    "decision": "allow"
+  },
+  {
+    "toolName": "send_email",
+    "args": {
+      "to": "team@acme-corp.com",
+      "subject": "Pricing Research",
+      "body": "Research complete."
+    },
+    "decision": "deny",
+    "reason": "Agent ResearchAgent is not permitted to use send_email"
+  },
+  {
+    "toolName": "submit_payment",
+    "args": {
+      "amount": 49,
+      "recipient": "cloud-hosting-inc",
+      "memo": "Monthly hosting fee"
+    },
+    "decision": "allow"
+  },
+  {
+    "toolName": "submit_payment",
+    "args": {
+      "amount": 12000,
+      "recipient": "enterprise-vendor",
+      "memo": "Annual license renewal"
+    },
+    "decision": "deny",
+    "reason": "Payment of $12000 exceeds $500 limit"
+  },
+  {
+    "toolName": "read_file",
+    "args": { "path": "/workspace/finance/receipt.pdf" },
+    "decision": "allow"
+  },
+  {
+    "toolName": "execute_command",
+    "args": { "command": "kubectl apply -f deploy.yaml" },
+    "decision": "deny",
+    "reason": "Agent FinanceAgent is not permitted to use execute_command"
+  },
+  {
+    "toolName": "read_file",
+    "args": { "path": "/workspace/deploy/config.yaml" },
+    "decision": "allow"
+  },
+  {
+    "toolName": "write_file",
+    "args": {
+      "path": "/workspace/deploy/config.yaml",
+      "content": "image: app:v2.1.0"
+    },
+    "decision": "allow"
+  },
+  {
+    "toolName": "write_file",
+    "args": {
+      "path": "/etc/systemd/system/app.service",
+      "content": "[Unit]\nDescription=App"
+    },
+    "decision": "deny",
+    "reason": "Write to protected path blocked: /etc/systemd/system/app.service"
+  },
+  {
+    "toolName": "execute_command",
+    "args": { "command": "kubectl rollout restart deployment/app" },
+    "decision": "allow"
+  }
+]

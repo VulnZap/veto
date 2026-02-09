@@ -1,0 +1,45 @@
+[
+  {
+    "toolName": "send_email",
+    "args": {
+      "to": "team@acme-corp.com",
+      "subject": "Sprint 14 Status Update",
+      "body": "All tasks on track. Deploy scheduled for Friday."
+    },
+    "decision": "allow"
+  },
+  {
+    "toolName": "send_email",
+    "args": {
+      "to": "vendor@external-supplier.com",
+      "subject": "Delivery Timeline",
+      "body": "When can we expect the Q3 shipment?"
+    },
+    "decision": "deny",
+    "reason": "External recipient blocked: vendor@external-supplier.com is not in allowed domains"
+  },
+  {
+    "toolName": "send_email",
+    "args": {
+      "to": "alice@acme-corp.com",
+      "subject": "Your login credentials",
+      "body": "Hi Alice, your temporary password is: TempP@ss123. Please change it on first login."
+    },
+    "decision": "deny",
+    "reason": "Sensitive content detected in email: matches pattern password"
+  },
+  {
+    "toolName": "search_web",
+    "args": { "query": "team standup best practices" },
+    "decision": "allow"
+  },
+  {
+    "toolName": "send_email",
+    "args": {
+      "to": "engineering@acme-corp.internal",
+      "subject": "Standup Notes - Feb 2026",
+      "body": "Action items: 1) Fix auth bug, 2) Update docs, 3) Review PRs."
+    },
+    "decision": "allow"
+  }
+]
