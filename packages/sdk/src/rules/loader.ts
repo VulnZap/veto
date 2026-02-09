@@ -82,6 +82,12 @@ export class RuleLoader {
   /**
    * Load rules from a directory containing YAML files.
    *
+   * Signed bundle (.signed.json) handling:
+   * - If signing is not configured: signed bundles are skipped with a warning
+   * - If signing.enabled=false: signed bundles are skipped with a warning
+   * - If signing.enabled=true and required=false: verification errors are logged, bundle skipped
+   * - If signing.enabled=true and required=true: verification errors are fatal (fail closed)
+   *
    * @param dirPath - Path to the directory
    * @param recursive - Whether to search subdirectories
    * @returns Loaded rules
@@ -101,19 +107,9 @@ export class RuleLoader {
       signedCount: signedFiles.length,
     });
 
+    // Process signed bundles with appropriate error handling based on signing config
     for (const filePath of signedFiles) {
-      try {
-        this.loadFromSignedBundle(filePath);
-      } catch (error) {
-        this.logger.error(
-          'Failed to load signed bundle',
-          { path: filePath },
-          error instanceof Error ? error : new Error(String(error))
-        );
-        if (this.signing?.required !== false) {
-          throw error;
-        }
-      }
+      this.processSignedBundle(filePath);
     }
 
     for (const filePath of yamlFiles) {
@@ -130,6 +126,48 @@ export class RuleLoader {
 
     this.buildIndex();
     return this.loadedRules;
+  }
+
+  /**
+   * Process a signed bundle file with appropriate error handling.
+   *
+   * @param filePath - Path to the signed bundle
+   */
+  private processSignedBundle(filePath: string): void {
+    // Case 1: Signing not configured at all - skip with warning
+    if (!this.signing) {
+      this.logger.warn('Skipping signed bundle: signing not configured', { path: filePath });
+      return;
+    }
+
+    // Case 2: Signing explicitly disabled - skip with warning
+    if (!this.signing.enabled) {
+      this.logger.warn('Skipping signed bundle: signing is disabled', { path: filePath });
+      return;
+    }
+
+    // Case 3 & 4: Signing enabled - attempt to load
+    try {
+      this.loadFromSignedBundle(filePath);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // If signing.required=true, fail closed (re-throw)
+      if (this.signing.required === true) {
+        this.logger.error(
+          'Signed bundle verification failed (signing required)',
+          { path: filePath },
+          error instanceof Error ? error : new Error(errorMessage)
+        );
+        throw error;
+      }
+
+      // If signing.required=false or undefined, log warning and continue
+      this.logger.warn('Signed bundle verification failed, skipping', {
+        path: filePath,
+        error: errorMessage,
+      });
+    }
   }
 
   /**
