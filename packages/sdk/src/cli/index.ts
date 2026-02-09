@@ -14,3 +14,4 @@ export {
   type LoadConfigOptions,
 } from './config.js';
 export { DEFAULT_CONFIG, DEFAULT_RULES } from './templates.js';
+export { templateList, templateShow, templateApply } from './template-commands.js';

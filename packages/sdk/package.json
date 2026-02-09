@@ -96,6 +96,10 @@
       "types": "./dist/custom/index.d.ts",
       "import": "./dist/custom/index.js"
     },
+    "./templates": {
+      "types": "./dist/templates/index.d.ts",
+      "import": "./dist/templates/index.js"
+    },
     "./benchmark": {
       "types": "./dist/benchmark/index.d.ts",
       "import": "./dist/benchmark/index.js"

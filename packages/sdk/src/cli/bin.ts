@@ -7,12 +7,10 @@
  */
 
 import { init } from './init.js';
+import { templateList, templateShow, templateApply } from './template-commands.js';
 
 const VERSION = '0.1.0';
 
-/**
- * Print help message.
- */
 function printHelp(): void {
   console.log(`
 Veto - AI Agent Tool Call Guardrail
@@ -21,39 +19,70 @@ Usage:
   veto <command> [options]
 
 Commands:
-  init          Initialize Veto in the current directory
-  version       Show version information
-  help          Show this help message
+  init                          Initialize Veto in the current directory
+  template list                 List available policy templates
+  template show <id>            Show template details and parameters
+  template apply <id> [opts]    Generate policy from template
+  version                       Show version information
+  help                          Show this help message
 
 Options:
-  --force, -f   Force overwrite existing files (init)
-  --quiet, -q   Suppress output
-  --help, -h    Show help
+  --force, -f       Force overwrite existing files (init)
+  --quiet, -q       Suppress output
+  --help, -h        Show help
+  --param key=val   Set template parameter (template apply)
+  --output, -o      Output file path (template apply)
 
 Examples:
-  veto init           Initialize Veto in current directory
-  veto init --force   Reinitialize, overwriting existing files
+  veto init
+  veto template list
+  veto template show email-safety
+  veto template apply email-safety --param allowedDomains=[company.com,partner.com]
+  veto template apply file-access --param allowedRoot=/home/user/project -o veto/rules/files.yaml
 `);
 }
 
-/**
- * Print version.
- */
 function printVersion(): void {
   console.log(`veto v${VERSION}`);
 }
 
-/**
- * Parse command line arguments.
- */
-function parseArgs(args: string[]): {
+interface ParsedArgs {
   command: string;
+  subcommand: string;
+  positional: string[];
   flags: Record<string, boolean>;
-} {
-  const flags: Record<string, boolean> = {};
-  let command = '';
+  params: Record<string, string>;
+  output?: string;
+}
 
-  for (const arg of args) {
+function parseArgs(args: string[]): ParsedArgs {
+  const flags: Record<string, boolean> = {};
+  const params: Record<string, string> = {};
+  const positional: string[] = [];
+  let command = '';
+  let subcommand = '';
+  let output: string | undefined;
+
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i]!;
+
+    if (arg === '--param' && i + 1 < args.length) {
+      const next = args[i + 1]!;
+      const eqIdx = next.indexOf('=');
+      if (eqIdx > 0) {
+        params[next.slice(0, eqIdx)] = next.slice(eqIdx + 1);
+      }
+      i += 2;
+      continue;
+    }
+
+    if ((arg === '--output' || arg === '-o') && i + 1 < args.length) {
+      output = args[i + 1];
+      i += 2;
+      continue;
+    }
+
     if (arg.startsWith('--')) {
       const flag = arg.slice(2);
       flags[flag] = true;
@@ -74,44 +103,76 @@ function parseArgs(args: string[]): {
       }
     } else if (!command) {
       command = arg;
+    } else if (!subcommand) {
+      subcommand = arg;
+    } else {
+      positional.push(arg);
     }
+
+    i++;
   }
 
-  return { command, flags };
+  return { command, subcommand, positional, flags, params, output };
 }
 
-/**
- * Main CLI entry point.
- */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const { command, flags } = parseArgs(args);
+  const parsed = parseArgs(args);
 
-  // Handle help flag
-  if (flags['help'] || command === 'help') {
+  if (parsed.flags['help'] || parsed.command === 'help') {
     printHelp();
     process.exit(0);
   }
 
-  // Handle version flag or command
-  if (flags['version'] || command === 'version') {
+  if (parsed.flags['version'] || parsed.command === 'version') {
     printVersion();
     process.exit(0);
   }
 
-  // Handle commands
-  switch (command) {
+  switch (parsed.command) {
     case 'init': {
       const result = await init({
-        force: flags['force'],
-        quiet: flags['quiet'],
+        force: parsed.flags['force'],
+        quiet: parsed.flags['quiet'],
       });
       process.exit(result.success ? 0 : 1);
       break;
     }
 
+    case 'template': {
+      switch (parsed.subcommand) {
+        case 'list':
+          templateList();
+          break;
+
+        case 'show': {
+          const id = parsed.positional[0];
+          if (!id) {
+            console.error('Usage: veto template show <id>');
+            process.exit(1);
+          }
+          templateShow(id);
+          break;
+        }
+
+        case 'apply': {
+          const id = parsed.positional[0];
+          if (!id) {
+            console.error('Usage: veto template apply <id> --param key=value');
+            process.exit(1);
+          }
+          templateApply(id, parsed.params, parsed.output);
+          break;
+        }
+
+        default:
+          console.error('Usage: veto template <list|show|apply>');
+          process.exit(1);
+      }
+      break;
+    }
+
     case '': {
-      // No command provided
       console.log('Veto - AI Agent Tool Call Guardrail');
       console.log('');
       console.log('Run "veto help" for usage information.');
@@ -121,14 +182,13 @@ async function main(): Promise<void> {
     }
 
     default: {
-      console.error(`Unknown command: ${command}`);
+      console.error(`Unknown command: ${parsed.command}`);
       console.error('Run "veto help" for usage information.');
       process.exit(1);
     }
   }
 }
 
-// Run the CLI
 main().catch((error) => {
   console.error('Error:', error.message);
   process.exit(1);
