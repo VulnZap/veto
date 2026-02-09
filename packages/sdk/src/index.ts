@@ -110,5 +110,9 @@ export type {
   GoogleFunctionCall,
 } from './providers/types.js';
 
+// Compiler (AST-based policy expressions)
+export { compile, evaluate, typeCheck } from './compiler/index.js';
+export type { ASTNode, EvalContext, TypeCheckResult } from './compiler/index.js';
+
 // CLI init function (for programmatic use)
 export { init, isInitialized } from './cli/init.js';

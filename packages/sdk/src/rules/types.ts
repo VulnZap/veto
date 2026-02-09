@@ -25,14 +25,22 @@ export type ConditionOperator =
 
 /**
  * A single condition within a rule.
+ *
+ * Conditions can be specified in two ways:
+ * 1. Legacy: field + operator + value (simple comparisons)
+ * 2. Expression: a compiled policy expression string (AST-based)
+ *
+ * When `expression` is set, `field`, `operator`, and `value` are ignored.
  */
 export interface RuleCondition {
   /** The field to check (supports dot notation, e.g., "arguments.path") */
-  field: string;
+  field?: string;
   /** The operator to use for comparison */
-  operator: ConditionOperator;
+  operator?: ConditionOperator;
   /** The value to compare against */
-  value: unknown;
+  value?: unknown;
+  /** AST-compiled policy expression (takes precedence over field/operator/value) */
+  expression?: string;
 }
 
 /**
