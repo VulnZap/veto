@@ -1,0 +1,5 @@
+version: "2.0"
+rules:
+  - id: rule-1
+    name: Wrong version
+    action: block

@@ -33,6 +33,7 @@ import type {
   ToolCallHistorySummary,
   ValidationAPIResponse,
 } from '../rules/types.js';
+import { validatePolicyIR } from '../rules/schema-validator.js';
 import type { KernelConfig, KernelToolCall } from '../kernel/types.js';
 import { KernelClient } from '../kernel/client.js';
 import type { CustomConfig, CustomToolCall, CustomResponse } from '../custom/types.js';
@@ -415,6 +416,7 @@ export class Veto {
         if (Array.isArray(parsed)) {
           rules = parsed as Rule[];
         } else if (parsed && typeof parsed === 'object' && 'rules' in parsed) {
+          validatePolicyIR(parsed);
           rules = (parsed as RuleSet).rules ?? [];
         } else if (parsed && typeof parsed === 'object' && 'id' in parsed) {
           rules = [parsed as unknown as Rule];
@@ -983,6 +985,7 @@ export class Veto {
   wrapTool<T extends { name: string }>(tool: T): T {
     const toolName = tool.name;
     const toolAny = tool as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const veto = this;
 
     // For LangChain tools, we need to wrap the 'func' property

@@ -1,0 +1,77 @@
+version: "1.0"
+name: full-policy-set
+description: A complete policy exercising every schema feature.
+rules:
+  - id: block-large-payments
+    name: Block large payments
+    description: Payments over $10,000 require manual approval
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - process_payment
+      - schedule_transfer
+    conditions:
+      - field: arguments.amount
+        operator: greater_than
+        value: 10000
+      - field: arguments.currency
+        operator: in
+        value: ["USD", "EUR", "GBP"]
+    tags:
+      - compliance
+      - payments
+    metadata:
+      audit_required: true
+      policy_owner: finance-team
+
+  - id: allow-read-operations
+    name: Allow read operations
+    description: Read-only operations are always allowed
+    enabled: true
+    severity: info
+    action: allow
+    tools:
+      - get_balance
+      - list_transactions
+
+  - id: warn-external-api
+    name: Warn on external API calls
+    enabled: false
+    severity: medium
+    action: warn
+    conditions:
+      - field: arguments.url
+        operator: starts_with
+        value: "https://external."
+
+  - id: block-regex-match
+    name: Block SQL injection patterns
+    severity: high
+    action: block
+    tools:
+      - execute_query
+    conditions:
+      - field: arguments.query
+        operator: matches
+        value: "(?i)(drop|delete|truncate)\\s+table"
+
+  - id: or-conditions
+    name: Block sensitive operations
+    severity: high
+    action: block
+    condition_groups:
+      - - field: arguments.action
+          operator: equals
+          value: delete
+      - - field: arguments.scope
+          operator: equals
+          value: admin
+        - field: arguments.confirmed
+          operator: not_equals
+          value: true
+settings:
+  default_action: allow
+  fail_mode: closed
+  global_tags:
+    - production
