@@ -27,7 +27,7 @@ export interface ValidationAPIConfig {
   timeout?: number;
   /** Additional headers to include in requests */
   headers?: Record<string, string>;
-  /** API key for authentication (sent as Authorization: Bearer header) */
+  /** API key for authentication (sent as X-Veto-API-Key header) */
   apiKey?: string;
   /** Number of retries on failure */
   retries?: number;
@@ -245,7 +245,7 @@ export class ValidationAPIClient {
     };
 
     if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+      headers['X-Veto-API-Key'] = this.config.apiKey;
     }
 
     return headers;
@@ -253,6 +253,9 @@ export class ValidationAPIClient {
 
   /**
    * Parse and validate the API response.
+   *
+   * Accepts canonical decisions (allow|deny) and legacy decisions (pass|block).
+   * Legacy decisions are mapped to canonical form with a deprecation warning.
    */
   private parseResponse(data: unknown): ValidationAPIResponse {
     if (!data || typeof data !== 'object') {
@@ -268,21 +271,51 @@ export class ValidationAPIClient {
     if (typeof response.should_block_weight !== 'number') {
       throw new ValidationAPIError('Missing or invalid should_block_weight');
     }
-    if (response.decision !== 'pass' && response.decision !== 'block') {
-      throw new ValidationAPIError('Missing or invalid decision (must be "pass" or "block")');
-    }
     if (typeof response.reasoning !== 'string') {
       throw new ValidationAPIError('Missing or invalid reasoning');
     }
 
+    // Normalize decision: accept canonical (allow|deny) and legacy (pass|block)
+    const decision = this.normalizeDecision(response.decision);
+
     return {
       should_pass_weight: response.should_pass_weight,
       should_block_weight: response.should_block_weight,
-      decision: response.decision,
+      decision,
       reasoning: response.reasoning,
       matched_rules: response.matched_rules as string[] | undefined,
       metadata: response.metadata as Record<string, unknown> | undefined,
     };
+  }
+
+  /**
+   * Normalize a decision value to the canonical allow|deny vocabulary.
+   *
+   * Accepts legacy pass|block values and maps them with a deprecation warning.
+   */
+  private normalizeDecision(raw: unknown): 'allow' | 'deny' {
+    if (raw === 'allow') return 'allow';
+    if (raw === 'deny') return 'deny';
+
+    if (raw === 'pass') {
+      console.warn(
+        '[veto] Deprecation: API returned decision "pass". Use "allow" instead. ' +
+        'Legacy "pass|block" vocabulary will be removed in a future release.'
+      );
+      return 'allow';
+    }
+
+    if (raw === 'block') {
+      console.warn(
+        '[veto] Deprecation: API returned decision "block". Use "deny" instead. ' +
+        'Legacy "pass|block" vocabulary will be removed in a future release.'
+      );
+      return 'deny';
+    }
+
+    throw new ValidationAPIError(
+      `Missing or invalid decision (got "${String(raw)}", expected "allow", "deny", "pass", or "block")`
+    );
   }
 
   /**
@@ -294,7 +327,7 @@ export class ValidationAPIClient {
       return {
         should_pass_weight: 1.0,
         should_block_weight: 0.0,
-        decision: 'pass',
+        decision: 'allow',
         reasoning: `API unavailable, failing open: ${reason}`,
       };
     } else {
@@ -302,7 +335,7 @@ export class ValidationAPIClient {
       return {
         should_pass_weight: 0.0,
         should_block_weight: 1.0,
-        decision: 'block',
+        decision: 'deny',
         reasoning: `API unavailable, failing closed: ${reason}`,
       };
     }
@@ -314,7 +347,7 @@ export class ValidationAPIClient {
   private resolveConfig(config: ValidationAPIConfig): ResolvedAPIConfig {
     return {
       baseUrl: config.baseUrl.replace(/\/$/, ''), // Remove trailing slash
-      endpoint: config.endpoint ?? '/tool/call/check',
+      endpoint: config.endpoint ?? '/v1/tools/validate',
       timeout: config.timeout ?? 10000,
       headers: config.headers ?? {},
       apiKey: config.apiKey,

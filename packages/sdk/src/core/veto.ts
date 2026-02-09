@@ -231,7 +231,7 @@ export class Veto {
 
     // Resolve API configuration from config file
     this.apiBaseUrl = (config.api?.baseUrl ?? 'http://localhost:8080').replace(/\/$/, '');
-    this.apiEndpoint = config.api?.endpoint ?? '/tool/call/check';
+    this.apiEndpoint = config.api?.endpoint ?? '/v1/tools/validate';
     this.apiTimeout = config.api?.timeout ?? 10000;
     this.apiRetries = config.api?.retries ?? 2;
     this.apiRetryDelay = config.api?.retryDelay ?? 1000;
@@ -489,6 +489,35 @@ export class Veto {
   }
 
   /**
+   * Normalize a decision value to the canonical allow|deny vocabulary.
+   * Accepts legacy pass|block values and maps them with a deprecation warning.
+   */
+  private static normalizeDecision(raw: unknown): 'allow' | 'deny' {
+    if (raw === 'allow') return 'allow';
+    if (raw === 'deny') return 'deny';
+
+    if (raw === 'pass') {
+      console.warn(
+        '[veto] Deprecation: API returned decision "pass". Use "allow" instead. ' +
+        'Legacy "pass|block" vocabulary will be removed in a future release.'
+      );
+      return 'allow';
+    }
+
+    if (raw === 'block') {
+      console.warn(
+        '[veto] Deprecation: API returned decision "block". Use "deny" instead. ' +
+        'Legacy "pass|block" vocabulary will be removed in a future release.'
+      );
+      return 'deny';
+    }
+
+    throw new Error(
+      `Invalid API response: decision must be "allow", "deny", "pass", or "block" (got "${String(raw)}")`
+    );
+  }
+
+  /**
    * Get rules applicable to a tool.
    */
   private getRulesForTool(toolName: string): Rule[] {
@@ -575,14 +604,12 @@ export class Veto {
         throw new Error(`API returned status ${response.status}`);
       }
 
-      const data = await response.json() as ValidationAPIResponse;
+      const data = await response.json() as Record<string, unknown>;
 
-      // Validate response
-      if (data.decision !== 'pass' && data.decision !== 'block') {
-        throw new Error('Invalid API response: missing decision');
-      }
+      // Normalize decision: accept canonical (allow|deny) and legacy (pass|block)
+      const decision = Veto.normalizeDecision(data.decision);
 
-      return data;
+      return { ...data, decision } as ValidationAPIResponse;
     } catch (error) {
       clearTimeout(timeoutId);
       throw error;
@@ -602,7 +629,7 @@ export class Veto {
       matched_rules: response.matched_rules,
     };
 
-    if (response.decision === 'pass') {
+    if (response.decision === 'allow') {
       this.logger.debug('API allowed tool call', {
         tool: context.toolName,
         passWeight: response.should_pass_weight,
@@ -614,7 +641,7 @@ export class Veto {
         metadata,
       };
     } else {
-      // API returned block decision
+      // API returned deny decision
       if (this.mode === 'log') {
         // Log mode: log the block but allow the call
         this.logger.warn('Tool call would be blocked (log mode)', {
@@ -983,6 +1010,7 @@ export class Veto {
   wrapTool<T extends { name: string }>(tool: T): T {
     const toolName = tool.name;
     const toolAny = tool as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const veto = this;
 
     // For LangChain tools, we need to wrap the 'func' property

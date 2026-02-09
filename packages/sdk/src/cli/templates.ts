@@ -27,7 +27,7 @@ validation:
 # Validation API endpoint (for mode: "api")
 api:
   baseUrl: "http://localhost:8080"
-  endpoint: "/tool/call/check"
+  endpoint: "/v1/tools/validate"
   timeout: 10000
   retries: 2
   retryDelay: 1000

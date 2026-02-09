@@ -141,7 +141,7 @@ export async function loadVetoConfig(
   // Build API config
   const apiConfig: ValidationAPIConfig = {
     baseUrl: options.apiBaseUrl ?? rawConfig.api?.baseUrl ?? 'http://localhost:8080',
-    endpoint: rawConfig.api?.endpoint ?? '/tool/call/check',
+    endpoint: rawConfig.api?.endpoint ?? '/v1/tools/validate',
     timeout: rawConfig.api?.timeout ?? 10000,
     retries: rawConfig.api?.retries ?? 2,
     retryDelay: rawConfig.api?.retryDelay ?? 1000,

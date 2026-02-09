@@ -89,7 +89,7 @@ export class RuleValidator {
 
     this.logger.info('Rule validator created', {
       rulesDir: this.config.rulesDir,
-      apiEndpoint: this.config.api.baseUrl + (this.config.api.endpoint ?? '/tool/call/check'),
+      apiEndpoint: this.config.api.baseUrl + (this.config.api.endpoint ?? '/v1/tools/validate'),
     });
   }
 
@@ -194,7 +194,7 @@ export class RuleValidator {
     const response = await this.apiClient.validate(apiContext, rules);
 
     // Convert API response to ValidationResult
-    if (response.decision === 'pass') {
+    if (response.decision === 'allow') {
       this.logger.info('Tool call allowed by API', {
         toolName: context.toolName,
         callId: context.callId,

@@ -153,8 +153,8 @@ export interface ValidationAPIResponse {
   should_pass_weight: number;
   /** Weight indicating confidence that the call should be blocked (0.0 - 1.0) */
   should_block_weight: number;
-  /** Final decision */
-  decision: 'pass' | 'block';
+  /** Final decision (canonical: allow|deny) */
+  decision: 'allow' | 'deny';
   /** Human-readable reasoning for the decision */
   reasoning: string;
   /** Optional: IDs of rules that matched */
