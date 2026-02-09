@@ -11,6 +11,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import type { Logger } from '../utils/logger.js';
 import type { Rule, RuleSet, LoadedRules } from './types.js';
+import { validatePolicyIR, PolicySchemaError } from './schema-validator.js';
 
 /**
  * Options for the rule loader.
@@ -122,6 +123,8 @@ export class RuleLoader {
       return;
     }
 
+    this.validateAgainstSchema(parsed, filePath);
+
     const ruleSet = this.parseRuleSet(parsed as Record<string, unknown>, filePath);
     if (ruleSet) {
       this.loadedRules.ruleSets.push(ruleSet);
@@ -149,6 +152,8 @@ export class RuleLoader {
       this.logger.warn('Invalid YAML content', { source: sourceName });
       return;
     }
+
+    this.validateAgainstSchema(parsed, sourceName);
 
     const ruleSet = this.parseRuleSet(parsed as Record<string, unknown>, sourceName);
     if (ruleSet) {
@@ -228,6 +233,25 @@ export class RuleLoader {
     this.buildIndex();
     this.logger.info('Reloaded rules', { sourceCount: sources.length });
     return this.loadedRules;
+  }
+
+  /**
+   * Validate parsed YAML against the Policy IR v1 schema.
+   * Throws PolicySchemaError with actionable details on failure.
+   */
+  private validateAgainstSchema(data: unknown, source: string): void {
+    try {
+      validatePolicyIR(data);
+    } catch (error) {
+      if (error instanceof PolicySchemaError) {
+        this.logger.error(
+          'Policy schema validation failed',
+          { source, errorCount: error.errors.length },
+          error
+        );
+      }
+      throw error;
+    }
   }
 
   /**

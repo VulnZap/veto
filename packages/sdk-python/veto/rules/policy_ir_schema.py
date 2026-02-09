@@ -1,0 +1,167 @@
+"""
+Policy IR v1 JSON Schema.
+
+Embedded copy of policy-ir-v1.schema.json for use without filesystem access.
+"""
+
+from typing import Any, Dict
+
+POLICY_IR_V1_SCHEMA: Dict[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://veto.dev/schemas/policy-ir-v1.json",
+    "title": "Veto Policy IR v1",
+    "description": "Canonical intermediate representation for Veto policies. Consumed by TypeScript and Python SDK loaders.",
+    "type": "object",
+    "required": ["version", "rules"],
+    "properties": {
+        "version": {
+            "const": "1.0",
+            "description": 'Schema version. Must be "1.0" for this version of the IR.',
+        },
+        "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable name for this policy set.",
+        },
+        "description": {
+            "type": "string",
+            "description": "Detailed description of this policy set.",
+        },
+        "rules": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/Rule"},
+            "description": "Ordered list of rules in this policy.",
+        },
+        "settings": {
+            "$ref": "#/$defs/Settings",
+        },
+    },
+    "additionalProperties": False,
+    "$defs": {
+        "Rule": {
+            "type": "object",
+            "required": ["id", "name", "action"],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Unique identifier for this rule.",
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Human-readable name for this rule.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Detailed description of what this rule does.",
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether this rule is active.",
+                },
+                "severity": {
+                    "$ref": "#/$defs/Severity",
+                },
+                "action": {
+                    "$ref": "#/$defs/Action",
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "description": "Tools this rule applies to. Empty or absent means all tools.",
+                },
+                "conditions": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/Condition"},
+                    "description": "Conditions that must ALL be met for the rule to trigger (AND logic).",
+                },
+                "condition_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/Condition"},
+                    },
+                    "description": "Alternative condition groups (OR between groups, AND within each group).",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Tags for categorization.",
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "description": "Arbitrary key-value metadata attached to this rule.",
+                },
+            },
+            "additionalProperties": False,
+        },
+        "Condition": {
+            "type": "object",
+            "required": ["field", "operator", "value"],
+            "properties": {
+                "field": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": 'Dot-notation path to the field to evaluate (e.g. "arguments.amount").',
+                },
+                "operator": {
+                    "$ref": "#/$defs/Operator",
+                },
+                "value": {
+                    "description": "The value to compare the field against.",
+                },
+            },
+            "additionalProperties": False,
+        },
+        "Operator": {
+            "type": "string",
+            "enum": [
+                "equals",
+                "not_equals",
+                "contains",
+                "not_contains",
+                "starts_with",
+                "ends_with",
+                "matches",
+                "greater_than",
+                "less_than",
+                "in",
+                "not_in",
+            ],
+            "description": "Comparison operator.",
+        },
+        "Severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low", "info"],
+            "default": "medium",
+            "description": "Severity level of the rule.",
+        },
+        "Action": {
+            "type": "string",
+            "enum": ["block", "warn", "log", "allow"],
+            "description": "Action to take when the rule matches.",
+        },
+        "Settings": {
+            "type": "object",
+            "properties": {
+                "default_action": {
+                    "$ref": "#/$defs/Action",
+                },
+                "fail_mode": {
+                    "type": "string",
+                    "enum": ["open", "closed"],
+                    "description": 'Behavior on validation errors: "open" allows, "closed" blocks.',
+                },
+                "global_tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Tags applied to all rules in this set.",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+}
