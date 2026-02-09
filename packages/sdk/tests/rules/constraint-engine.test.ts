@@ -90,6 +90,35 @@ describe('resolvePath', () => {
       { path: 'a.b.c.d.e.f.g.h.i.j', value: 42, found: true },
     ]);
   });
+
+  // --- Edge case: existing property with undefined value ---
+  it('should correctly detect existing property with undefined value', () => {
+    const obj = { key: undefined };
+    const result = resolvePath(obj, 'key');
+    expect(result).toHaveLength(1);
+    expect(result[0].found).toBe(true);
+    expect(result[0].value).toBeUndefined();
+    expect(result[0].path).toBe('key');
+  });
+
+  it('should distinguish between undefined value and missing key', () => {
+    const obj = { existsButUndefined: undefined };
+    const resultExists = resolvePath(obj, 'existsButUndefined');
+    const resultMissing = resolvePath(obj, 'doesNotExist');
+
+    expect(resultExists[0].found).toBe(true);
+    expect(resultExists[0].value).toBeUndefined();
+
+    expect(resultMissing[0].found).toBe(false);
+    expect(resultMissing[0].value).toBeUndefined();
+  });
+
+  it('should track found correctly through nested undefined values', () => {
+    const obj = { outer: { inner: undefined } };
+    const result = resolvePath(obj, 'outer.inner');
+    expect(result[0].found).toBe(true);
+    expect(result[0].value).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -129,6 +158,22 @@ describe('evaluateConstraints', () => {
       );
       expect(result.pass).toBe(false);
       expect(result.errors[0].code).toBe(ConstraintErrorCode.TYPE_MISMATCH);
+    });
+
+    // --- Edge case: property exists but has undefined value ---
+    it('should evaluate constraint on existing undefined property', () => {
+      const result = evaluate({ key: undefined }, [
+        cond('key', 'equals', undefined),
+      ]);
+      expect(result.pass).toBe(true);
+    });
+
+    it('should fail when existing undefined property compared to non-undefined', () => {
+      const result = evaluate({ key: undefined }, [
+        cond('key', 'equals', 'someValue'),
+      ]);
+      expect(result.pass).toBe(false);
+      expect(result.errors[0].code).toBe(ConstraintErrorCode.ENUM_VIOLATION);
     });
   });
 
@@ -391,6 +436,100 @@ describe('evaluateConstraints — nested paths', () => {
       cond('items[*].price', 'less_than', 50),
     ]);
     expect(result.pass).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// evaluateConstraints — wildcard edge cases
+// ---------------------------------------------------------------------------
+
+describe('evaluateConstraints — wildcard edge cases', () => {
+  it('should fail when wildcard is used on non-array (string)', () => {
+    const args = { items: 'not-an-array' };
+    const result = evaluate(args, [
+      cond('items[*].price', 'less_than', 50),
+    ]);
+    expect(result.pass).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].code).toBe(ConstraintErrorCode.TYPE_MISMATCH);
+    expect(result.errors[0].message).toContain('Wildcard selector');
+    expect(result.errors[0].message).toContain('requires an array');
+  });
+
+  it('should fail when wildcard is used on non-array (object)', () => {
+    const args = { items: { notAnArray: true } };
+    const result = evaluate(args, [
+      cond('items[*].value', 'equals', 'test'),
+    ]);
+    expect(result.pass).toBe(false);
+    expect(result.errors[0].code).toBe(ConstraintErrorCode.TYPE_MISMATCH);
+  });
+
+  it('should fail when wildcard is used on non-array (number)', () => {
+    const args = { items: 42 };
+    const result = evaluate(args, [
+      cond('items[*].val', 'equals', 'x'),
+    ]);
+    expect(result.pass).toBe(false);
+    expect(result.errors[0].code).toBe(ConstraintErrorCode.TYPE_MISMATCH);
+  });
+
+  it('should fail when wildcard is used on null', () => {
+    const args = { items: null };
+    const result = evaluate(args, [
+      cond('items[*].val', 'equals', 'x'),
+    ]);
+    expect(result.pass).toBe(false);
+    expect(result.errors[0].code).toBe(ConstraintErrorCode.TYPE_MISMATCH);
+  });
+
+  it('should fail when wildcard path does not exist', () => {
+    const args = { other: [] };
+    const result = evaluate(args, [
+      cond('items[*].price', 'less_than', 50),
+    ]);
+    expect(result.pass).toBe(false);
+    expect(result.errors[0].code).toBe(ConstraintErrorCode.PATH_NOT_FOUND);
+  });
+
+  it('should pass for empty array (vacuously true)', () => {
+    const args = { items: [] };
+    const result = evaluate(args, [
+      cond('items[*].price', 'greater_than', 9999),
+    ]);
+    // Empty array = zero elements to check = vacuously true
+    expect(result.pass).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('should distinguish empty array (vacuous pass) from non-array (type error)', () => {
+    const emptyArrayArgs = { items: [] };
+    const nonArrayArgs = { items: {} };
+    
+    const emptyResult = evaluate(emptyArrayArgs, [
+      cond('items[*].x', 'equals', 'y'),
+    ]);
+    const nonArrayResult = evaluate(nonArrayArgs, [
+      cond('items[*].x', 'equals', 'y'),
+    ]);
+
+    expect(emptyResult.pass).toBe(true);
+    expect(nonArrayResult.pass).toBe(false);
+    expect(nonArrayResult.errors[0].code).toBe(ConstraintErrorCode.TYPE_MISMATCH);
+  });
+
+  it('should handle nested wildcard on non-array at inner level', () => {
+    const args = {
+      orders: [
+        { items: [{ sku: 'A' }] },
+        { items: 'not-an-array' }, // Inner non-array
+      ],
+    };
+    const result = evaluate(args, [
+      cond('orders[*].items[*].sku', 'equals', 'A'),
+    ]);
+    expect(result.pass).toBe(false);
+    expect(result.errors[0].code).toBe(ConstraintErrorCode.TYPE_MISMATCH);
   });
 });
 

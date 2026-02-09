@@ -44,13 +44,31 @@ export interface ConstraintResult {
   errors: ConstraintError[];
 }
 
+/** Reason why a path was not found */
+type NotFoundReason = 'missing' | 'wildcard_on_non_array';
+
+interface PathResult {
+  path: string;
+  value: unknown;
+  found: boolean;
+  /** Reason for found=false, only set when found is false */
+  notFoundReason?: NotFoundReason;
+}
+
 /**
  * Resolve a dot-notation path against an object. Supports array
  * wildcard selectors (`[*]`).
  *
- * Returns an array of `{ path, value }` pairs. For non-wildcard paths
+ * Returns an array of PathResult objects. For non-wildcard paths
  * this is a single element. For wildcards each matching element gets
  * its own entry with the fully-qualified path.
+ *
+ * The `found` field indicates whether the path exists in the structure,
+ * independent of the value (which may be `undefined`).
+ *
+ * When `found` is false, `notFoundReason` indicates why:
+ * - 'missing': The property doesn't exist in the object
+ * - 'wildcard_on_non_array': A wildcard was used on a non-array value
  *
  * Resolution is iterative with a bounded depth of MAX_PATH_DEPTH.
  */
@@ -58,36 +76,68 @@ export function resolvePath(
   obj: unknown,
   path: string
 ): Array<{ path: string; value: unknown; found: boolean }> {
+  const results = resolvePathInternal(obj, path);
+  // Strip internal notFoundReason from public API
+  return results.map(({ path, value, found }) => ({ path, value, found }));
+}
+
+/** Internal version that preserves notFoundReason */
+function resolvePathInternal(obj: unknown, path: string): PathResult[] {
   const segments = parsePath(path);
 
   if (segments.length > MAX_PATH_DEPTH) {
-    return [{ path, value: undefined, found: false }];
+    return [{ path, value: undefined, found: false, notFoundReason: 'missing' }];
   }
 
   // Start with a single cursor at the root
-  let cursors: Array<{ value: unknown; resolvedPath: string }> = [
-    { value: obj, resolvedPath: '' },
-  ];
+  let cursors: Array<{
+    value: unknown;
+    resolvedPath: string;
+    found: boolean;
+    notFoundReason?: NotFoundReason;
+  }> = [{ value: obj, resolvedPath: '', found: true }];
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
-    const nextCursors: Array<{ value: unknown; resolvedPath: string }> = [];
+    const nextCursors: Array<{
+      value: unknown;
+      resolvedPath: string;
+      found: boolean;
+      notFoundReason?: NotFoundReason;
+    }> = [];
 
     for (const cursor of cursors) {
+      // If we've already lost the path, propagate not-found with same reason
+      if (!cursor.found) {
+        nextCursors.push({
+          value: undefined,
+          resolvedPath: cursor.resolvedPath
+            ? cursor.resolvedPath + (segment === '[*]' ? segment : '.' + segment)
+            : segment,
+          found: false,
+          notFoundReason: cursor.notFoundReason,
+        });
+        continue;
+      }
+
       if (segment === '[*]') {
         // Array wildcard: fan out over array elements
         if (!Array.isArray(cursor.value)) {
-          // Not an array — path not found through this cursor
+          // Not an array — this is a type error for wildcard
           nextCursors.push({
             value: undefined,
             resolvedPath: cursor.resolvedPath + '[*]',
+            found: false,
+            notFoundReason: 'wildcard_on_non_array',
           });
           continue;
         }
+        // Fan out over array elements (may be empty, yielding zero cursors)
         for (let idx = 0; idx < cursor.value.length; idx++) {
           nextCursors.push({
             value: cursor.value[idx],
             resolvedPath: cursor.resolvedPath + `[${idx}]`,
+            found: true,
           });
         }
       } else {
@@ -99,16 +149,20 @@ export function resolvePath(
             resolvedPath: cursor.resolvedPath
               ? cursor.resolvedPath + '.' + segment
               : segment,
+            found: false,
+            notFoundReason: 'missing',
           });
           continue;
         }
         const record = parent as Record<string, unknown>;
-        const found = Object.prototype.hasOwnProperty.call(record, segment);
+        const exists = Object.prototype.hasOwnProperty.call(record, segment);
         nextCursors.push({
-          value: found ? record[segment] : undefined,
+          value: exists ? record[segment] : undefined,
           resolvedPath: cursor.resolvedPath
             ? cursor.resolvedPath + '.' + segment
             : segment,
+          found: exists,
+          notFoundReason: exists ? undefined : 'missing',
         });
       }
     }
@@ -119,7 +173,8 @@ export function resolvePath(
   return cursors.map((c) => ({
     path: c.resolvedPath,
     value: c.value,
-    found: c.value !== undefined,
+    found: c.found,
+    notFoundReason: c.notFoundReason,
   }));
 }
 
@@ -185,34 +240,72 @@ export function evaluateConstraints(
   const errors: ConstraintError[] = [];
 
   for (const condition of sorted) {
-    const resolved = resolvePath(args, condition.field);
+    const resolved = resolvePathInternal(args, condition.field);
 
     const hasWildcard = condition.field.includes('[*]');
 
-    // Wildcard over empty array resolves to zero entries — vacuously true
-    if (resolved.length === 0 && hasWildcard) {
-      continue;
-    }
-
-    if (resolved.length === 0 || (!hasWildcard && !resolved[0].found)) {
-      errors.push(
-        constraintError(
-          ConstraintErrorCode.PATH_NOT_FOUND,
-          condition.field,
-          'value at path',
-          undefined,
-          `Path "${condition.field}" not found in arguments`
-        )
+    // Handle wildcard paths specially
+    if (hasWildcard) {
+      // Check if we hit a wildcard-on-non-array situation
+      const wildcardOnNonArray = resolved.some(
+        (r) => !r.found && r.notFoundReason === 'wildcard_on_non_array'
       );
-      continue;
-    }
 
-    for (const entry of resolved) {
-      if (!entry.found && hasWildcard) {
-        // Wildcard resolved to no entries (empty array), skip
+      if (wildcardOnNonArray) {
+        // Wildcard was used on a non-array type - this is a type error
+        errors.push(
+          constraintError(
+            ConstraintErrorCode.TYPE_MISMATCH,
+            condition.field,
+            'array for wildcard selector',
+            'non-array',
+            `Wildcard selector in "${condition.field}" requires an array`
+          )
+        );
         continue;
       }
+
+      // Empty array case: resolved.length === 0, vacuously true
+      if (resolved.length === 0) {
+        continue;
+      }
+
+      // Check for path-not-found before the wildcard
+      // (e.g., "missing[*].foo" where "missing" doesn't exist)
+      const allNotFound = resolved.every((r) => !r.found);
+      if (allNotFound) {
+        errors.push(
+          constraintError(
+            ConstraintErrorCode.PATH_NOT_FOUND,
+            condition.field,
+            'value at path',
+            undefined,
+            `Path "${condition.field}" not found in arguments`
+          )
+        );
+        continue;
+      }
+    } else {
+      // Non-wildcard path: single result expected
+      if (resolved.length === 0 || !resolved[0].found) {
+        errors.push(
+          constraintError(
+            ConstraintErrorCode.PATH_NOT_FOUND,
+            condition.field,
+            'value at path',
+            undefined,
+            `Path "${condition.field}" not found in arguments`
+          )
+        );
+        continue;
+      }
+    }
+
+    // Evaluate each resolved entry
+    for (const entry of resolved) {
       if (!entry.found) {
+        // For wildcard paths with some found and some not-found entries,
+        // report path not found for the missing ones
         errors.push(
           constraintError(
             ConstraintErrorCode.PATH_NOT_FOUND,
