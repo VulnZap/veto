@@ -83,6 +83,7 @@ interface VetoConfigFile {
     timeout?: number;
     retries?: number;
     retryDelay?: number;
+    apiKey?: string;
   };
   kernel?: {
     baseUrl?: string;
@@ -199,6 +200,7 @@ export class Veto {
   private readonly apiTimeout: number;
   private readonly apiRetries: number;
   private readonly apiRetryDelay: number;
+  private readonly apiKey?: string;
   private readonly sessionId?: string;
   private readonly agentId?: string;
 
@@ -235,6 +237,7 @@ export class Veto {
     this.apiTimeout = config.api?.timeout ?? 10000;
     this.apiRetries = config.api?.retries ?? 2;
     this.apiRetryDelay = config.api?.retryDelay ?? 1000;
+    this.apiKey = config.api?.apiKey;
 
     // Resolve kernel configuration
     if (this.validationMode === 'kernel' && config.kernel?.model) {
@@ -590,6 +593,10 @@ export class Veto {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
+
+      if (this.apiKey) {
+        headers['X-Veto-API-Key'] = this.apiKey;
+      }
 
       const response = await fetch(url, {
         method: 'POST',

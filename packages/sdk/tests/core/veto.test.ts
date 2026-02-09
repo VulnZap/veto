@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Veto, ToolCallDeniedError } from '../../src/core/veto.js';
+import { Veto } from '../../src/core/veto.js';
 
 const TEST_DIR = '/tmp/veto-test-' + Date.now();
 const VETO_DIR = join(TEST_DIR, 'veto');
@@ -74,7 +74,7 @@ rules:
         'utf-8'
       );
 
-      const veto = await Veto.init({ configDir: VETO_DIR });
+      await Veto.init({ configDir: VETO_DIR });
       // Logic for verifying rules loaded is indirect via usage below
     });
   });
@@ -194,7 +194,7 @@ rules:
 
       try {
         await wrapped[1].handler();
-      } catch (e) {
+      } catch {
         // Expected to throw
       }
 
@@ -265,7 +265,7 @@ rules:
       });
 
       const tools = [{ name: 'k_tool', handler: vi.fn(), inputSchema: {} }];
-      // @ts-ignore
+      // @ts-expect-error -- kernel client type mismatch is intentional
       const wrapped = veto.wrap(tools);
 
       try {
@@ -275,6 +275,252 @@ rules:
         expect(error.message).toContain('Kernel blocked') // Or 'Tool call denied'
       }
       expect(mockKernelClient.evaluate).toHaveBeenCalled();
+    });
+  });
+
+  describe('API authentication headers', () => {
+    it('should send X-Veto-API-Key header when apiKey is configured', async () => {
+      // Config with apiKey
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+api:
+  baseUrl: "http://localhost:8080"
+  endpoint: "/v1/tools/validate"
+  timeout: 5000
+  retries: 0
+  apiKey: "veto_test_key_abc123"
+logging:
+  level: "silent"
+rules:
+  directory: "./rules"
+`,
+        'utf-8'
+      );
+
+      // Create rule to trigger API validation
+      writeFileSync(
+        join(RULES_DIR, 'api-auth.yaml'),
+        `
+rules:
+  - id: auth-test
+    name: Auth Test Rule
+    enabled: true
+    severity: high
+    action: block
+    tools: [auth_tool]
+`,
+        'utf-8'
+      );
+
+      // Mock API response
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'allow',
+          reasoning: 'Allowed',
+          should_pass_weight: 1.0,
+          should_block_weight: 0.0
+        }),
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      const tools = [{ name: 'auth_tool', handler: async () => 'ok', inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await wrapped[0].handler({});
+
+      // Verify X-Veto-API-Key header was sent
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-Veto-API-Key': 'veto_test_key_abc123',
+          }),
+        })
+      );
+    });
+
+    it('should not send auth header when no apiKey is configured', async () => {
+      // Config without apiKey
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+api:
+  baseUrl: "http://localhost:8080"
+  endpoint: "/v1/tools/validate"
+  timeout: 5000
+  retries: 0
+logging:
+  level: "silent"
+rules:
+  directory: "./rules"
+`,
+        'utf-8'
+      );
+
+      // Create rule
+      writeFileSync(
+        join(RULES_DIR, 'no-auth.yaml'),
+        `
+rules:
+  - id: no-auth-test
+    name: No Auth Test Rule
+    enabled: true
+    severity: high
+    action: block
+    tools: [no_auth_tool]
+`,
+        'utf-8'
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'allow',
+          reasoning: 'Allowed',
+          should_pass_weight: 1.0,
+          should_block_weight: 0.0
+        }),
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      const tools = [{ name: 'no_auth_tool', handler: async () => 'ok', inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await wrapped[0].handler({});
+
+      // Get the headers from the fetch call
+      const callHeaders = mockFetch.mock.calls[0][1]?.headers as Record<string, string>;
+      expect(callHeaders['X-Veto-API-Key']).toBeUndefined();
+      expect(callHeaders['Authorization']).toBeUndefined();
+    });
+  });
+
+  describe('API response normalization - legacy decisions', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('should accept canonical "allow" decision without warning', async () => {
+      writeFileSync(
+        join(RULES_DIR, 'canonical-allow.yaml'),
+        `
+rules:
+  - id: canonical-allow
+    name: Canonical Allow
+    enabled: true
+    severity: high
+    action: block
+    tools: [canonical_tool]
+`,
+        'utf-8'
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'allow',
+          reasoning: 'Canonical allow',
+          should_pass_weight: 1.0,
+          should_block_weight: 0.0
+        }),
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR, logLevel: 'silent' });
+      const tools = [{ name: 'canonical_tool', handler: async () => 'ok', inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await wrapped[0].handler({});
+
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Deprecation'));
+    });
+
+    it('should map legacy "pass" to "allow" with deprecation warning', async () => {
+      writeFileSync(
+        join(RULES_DIR, 'legacy-pass.yaml'),
+        `
+rules:
+  - id: legacy-pass
+    name: Legacy Pass
+    enabled: true
+    severity: high
+    action: block
+    tools: [legacy_pass_tool]
+`,
+        'utf-8'
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'pass',
+          reasoning: 'Legacy pass',
+          should_pass_weight: 1.0,
+          should_block_weight: 0.0
+        }),
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR, logLevel: 'silent' });
+      const tools = [{ name: 'legacy_pass_tool', handler: async () => 'ok', inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await wrapped[0].handler({});
+
+      // Should emit deprecation warning
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Deprecation'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"pass"'));
+    });
+
+    it('should map legacy "block" to "deny" with deprecation warning', async () => {
+      writeFileSync(
+        join(RULES_DIR, 'legacy-block.yaml'),
+        `
+rules:
+  - id: legacy-block
+    name: Legacy Block
+    enabled: true
+    severity: high
+    action: block
+    tools: [legacy_block_tool]
+`,
+        'utf-8'
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'block',
+          reasoning: 'Legacy block',
+          should_pass_weight: 0.0,
+          should_block_weight: 1.0
+        }),
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR, logLevel: 'silent' });
+      const tools = [{ name: 'legacy_block_tool', handler: vi.fn(), inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      try {
+        await wrapped[0].handler({});
+        expect(true).toBe(false); // Should throw
+      } catch (error: any) {
+        expect(error.message).toContain('Tool call denied');
+      }
+
+      // Should emit deprecation warning
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Deprecation'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"block"'));
     });
   });
 });
