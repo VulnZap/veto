@@ -1,0 +1,80 @@
+suite: tool-filter
+description: Tests for validator tool_filter — validators only run for matching tools
+
+cases:
+  - id: filter-skips-non-matching
+    name: Filtered validator skips non-matching tool
+    validators:
+      - type: custom_deny
+        custom_reason: Should not run
+        priority: 1
+        tool_filter: [other_tool]
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: allow
+      validator_count: 0
+
+  - id: filter-runs-on-match
+    name: Filtered validator runs for matching tool
+    validators:
+      - type: custom_deny
+        custom_reason: Filter matched
+        priority: 1
+        tool_filter: [test_tool, another_tool]
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: filter matched
+      validator_count: 1
+
+  - id: unfiltered-runs-for-all
+    name: Unfiltered validator runs for any tool
+    validators:
+      - type: custom_allow
+        custom_reason: No filter
+        priority: 1
+    input:
+      tool_name: any_random_tool
+      arguments: {}
+    expected:
+      decision: allow
+      validator_count: 1
+
+  - id: mixed-filtered-and-unfiltered
+    name: Mix of filtered and unfiltered validators
+    description: >
+      Filtered deny only applies to other_tool. Unfiltered allow applies to all.
+      For test_tool, only the unfiltered allow runs.
+    validators:
+      - type: custom_deny
+        custom_reason: Only blocks other
+        priority: 1
+        tool_filter: [other_tool]
+      - type: custom_allow
+        custom_reason: Always allows
+        priority: 2
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: allow
+      validator_count: 1
+
+  - id: blocklist-tool-filter
+    name: Blocklist uses tool_filter internally
+    description: >
+      Blocklist validator only matches its listed tools.
+      An unlisted tool should not trigger the blocklist.
+    validators:
+      - type: blocklist
+        tools: [dangerous_action]
+    input:
+      tool_name: safe_action
+      arguments: {}
+    expected:
+      decision: allow
+      validator_count: 0

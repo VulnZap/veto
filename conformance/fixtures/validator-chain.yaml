@@ -1,0 +1,112 @@
+suite: validator-chain
+description: Tests for validator chaining, priority ordering, and early termination
+
+cases:
+  - id: deny-stops-chain
+    name: Deny from first validator stops the chain
+    validators:
+      - type: custom_deny
+        custom_reason: Blocked early
+        priority: 1
+      - type: custom_allow
+        custom_reason: Would have allowed
+        priority: 2
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: blocked early
+      validator_count: 1
+
+  - id: allow-continues-chain
+    name: Allow from first validator continues to next
+    validators:
+      - type: custom_allow
+        custom_reason: First pass
+        priority: 1
+      - type: custom_allow
+        custom_reason: Second pass
+        priority: 2
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: allow
+      validator_count: 2
+
+  - id: priority-ordering
+    name: Lower priority number runs first
+    description: >
+      Validator with priority 10 runs before priority 50.
+      If priority 10 denies, priority 50 never runs.
+    validators:
+      - type: custom_deny
+        custom_reason: High priority deny
+        priority: 10
+      - type: custom_allow
+        custom_reason: Low priority allow
+        priority: 50
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: high priority deny
+      validator_count: 1
+
+  - id: later-deny-overrides
+    name: Later validator in chain can deny
+    validators:
+      - type: custom_allow
+        custom_reason: Allowed first
+        priority: 1
+      - type: custom_deny
+        custom_reason: Denied second
+        priority: 2
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: denied second
+      validator_count: 2
+
+  - id: three-validators-middle-deny
+    name: Middle validator deny stops remaining
+    validators:
+      - type: custom_allow
+        custom_reason: Pass one
+        priority: 1
+      - type: custom_deny
+        custom_reason: Fail two
+        priority: 2
+      - type: custom_allow
+        custom_reason: Pass three
+        priority: 3
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: fail two
+      validator_count: 2
+
+  - id: all-allow-returns-last
+    name: All validators allow returns final allow
+    validators:
+      - type: custom_allow
+        custom_reason: First ok
+        priority: 1
+      - type: custom_allow
+        custom_reason: Second ok
+        priority: 2
+      - type: custom_allow
+        custom_reason: Third ok
+        priority: 3
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: allow
+      validator_count: 3

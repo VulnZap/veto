@@ -1,0 +1,37 @@
+suite: error-handling
+description: Tests for how validator errors are treated (errors = deny)
+
+cases:
+  - id: error-treated-as-deny
+    name: Validator error is treated as deny
+    description: >
+      When a validator throws an exception, the engine treats it as a deny.
+      The reason should contain the error message.
+    validators:
+      - type: custom_throw
+        custom_reason: Validator crashed
+        priority: 1
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: validator crashed
+      validator_count: 1
+
+  - id: error-stops-chain
+    name: Validator error stops remaining validators
+    validators:
+      - type: custom_throw
+        custom_reason: Boom
+        priority: 1
+      - type: custom_allow
+        custom_reason: Never reached
+        priority: 2
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: boom
+      validator_count: 1

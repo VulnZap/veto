@@ -1,0 +1,56 @@
+suite: basic-allow
+description: Basic scenarios where tool calls should be allowed
+
+cases:
+  - id: no-validators-default-allow
+    name: No validators returns default allow
+    validators: []
+    default_decision: allow
+    input:
+      tool_name: send_email
+      arguments:
+        to: user@example.com
+        body: Hello
+    expected:
+      decision: allow
+      reason_absent: true
+      validator_count: 0
+
+  - id: passthrough-allows-any
+    name: Passthrough validator allows any tool
+    validators:
+      - type: passthrough
+    input:
+      tool_name: delete_file
+      arguments:
+        path: /tmp/test.txt
+    expected:
+      decision: allow
+      validator_count: 1
+
+  - id: allowlist-listed-tool
+    name: Allowlist allows listed tool
+    validators:
+      - type: allowlist
+        tools: [send_email, read_file]
+    input:
+      tool_name: send_email
+      arguments:
+        to: user@example.com
+    expected:
+      decision: allow
+      validator_count: 1
+
+  - id: blocklist-unlisted-tool
+    name: Blocklist allows unlisted tool
+    validators:
+      - type: blocklist
+        tools: [delete_database, drop_table]
+        reason: Destructive operation blocked
+    input:
+      tool_name: read_file
+      arguments:
+        path: /tmp/safe.txt
+    expected:
+      decision: allow
+      validator_count: 0

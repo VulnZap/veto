@@ -1,0 +1,82 @@
+suite: basic-deny
+description: Basic scenarios where tool calls should be denied
+
+cases:
+  - id: no-validators-default-deny
+    name: No validators returns default deny
+    validators: []
+    default_decision: deny
+    input:
+      tool_name: send_email
+      arguments:
+        to: user@example.com
+    expected:
+      decision: deny
+      reason_absent: true
+      validator_count: 0
+
+  - id: blocklist-denies-listed
+    name: Blocklist denies listed tool
+    validators:
+      - type: blocklist
+        tools: [delete_file, drop_table]
+        reason: Tool is blocked
+    input:
+      tool_name: delete_file
+      arguments:
+        path: /etc/passwd
+    expected:
+      decision: deny
+      reason_contains: blocked
+      validator_count: 1
+
+  - id: blocklist-default-reason
+    name: Blocklist uses default reason text
+    validators:
+      - type: blocklist
+        tools: [dangerous_tool]
+    input:
+      tool_name: dangerous_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: dangerous_tool
+
+  - id: allowlist-denies-unlisted
+    name: Allowlist denies unlisted tool
+    validators:
+      - type: allowlist
+        tools: [read_file, list_files]
+        reason: Not in allowlist
+    input:
+      tool_name: execute_command
+      arguments:
+        command: rm -rf /
+    expected:
+      decision: deny
+      reason_contains: execute_command
+
+  - id: allowlist-default-reason
+    name: Allowlist uses default reason text
+    validators:
+      - type: allowlist
+        tools: [safe_tool]
+    input:
+      tool_name: unsafe_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: unsafe_tool
+
+  - id: custom-deny-validator
+    name: Custom validator denies with reason
+    validators:
+      - type: custom_deny
+        custom_reason: Access denied by policy
+        priority: 1
+    input:
+      tool_name: any_tool
+      arguments: {}
+    expected:
+      decision: deny
+      reason_contains: access denied by policy

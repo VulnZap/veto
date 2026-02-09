@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Veto Conformance Fixture",
+  "description": "A conformance test fixture for verifying TS and Python SDK produce identical validation results.",
+  "type": "object",
+  "required": ["suite", "cases"],
+  "properties": {
+    "suite": {
+      "type": "string",
+      "description": "Name of this test suite"
+    },
+    "description": {
+      "type": "string",
+      "description": "What this suite tests"
+    },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/case" },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["id", "name", "validators", "input", "expected"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this test case"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name"
+        },
+        "description": {
+          "type": "string"
+        },
+        "validators": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/validator_config" },
+          "description": "Validators to configure on the engine"
+        },
+        "default_decision": {
+          "type": "string",
+          "enum": ["allow", "deny"],
+          "default": "allow"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        }
+      }
+    },
+    "validator_config": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "passthrough",
+            "blocklist",
+            "allowlist",
+            "custom_allow",
+            "custom_deny"
+          ],
+          "description": "Built-in validator type or custom test validator"
+        },
+        "tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tool names for blocklist/allowlist validators"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Custom reason for blocklist/allowlist"
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Validator priority (lower runs first)"
+        },
+        "tool_filter": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Only run for these tool names"
+        },
+        "custom_reason": {
+          "type": "string",
+          "description": "Reason returned by custom_allow/custom_deny validators"
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "required": ["tool_name"],
+      "properties": {
+        "tool_name": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object",
+          "default": {}
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "required": ["decision"],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": ["allow", "deny", "modify"]
+        },
+        "reason_contains": {
+          "type": "string",
+          "description": "The reason field must contain this substring (case-insensitive, after normalization)"
+        },
+        "reason_absent": {
+          "type": "boolean",
+          "description": "If true, reason must be null/undefined/None",
+          "default": false
+        },
+        "validator_count": {
+          "type": "integer",
+          "description": "Expected number of validators that ran"
+        }
+      }
+    }
+  }
+}

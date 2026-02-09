@@ -1,0 +1,74 @@
+suite: argument-passthrough
+description: Tests that tool arguments are correctly passed through to validators
+
+cases:
+  - id: empty-arguments
+    name: Empty arguments object works
+    validators:
+      - type: passthrough
+    input:
+      tool_name: test_tool
+      arguments: {}
+    expected:
+      decision: allow
+      validator_count: 1
+
+  - id: string-arguments
+    name: String arguments passed through
+    validators:
+      - type: passthrough
+    input:
+      tool_name: send_email
+      arguments:
+        to: user@example.com
+        subject: Hello World
+        body: This is a test
+    expected:
+      decision: allow
+      validator_count: 1
+
+  - id: numeric-arguments
+    name: Numeric arguments passed through
+    validators:
+      - type: passthrough
+    input:
+      tool_name: transfer_money
+      arguments:
+        amount: 100.50
+        count: 3
+    expected:
+      decision: allow
+      validator_count: 1
+
+  - id: nested-arguments
+    name: Nested object arguments passed through
+    validators:
+      - type: passthrough
+    input:
+      tool_name: create_user
+      arguments:
+        name: Test User
+        address:
+          street: 123 Main St
+          city: Springfield
+          zip: "62701"
+        tags:
+          - admin
+          - active
+    expected:
+      decision: allow
+      validator_count: 1
+
+  - id: boolean-and-null-arguments
+    name: Boolean and null arguments passed through
+    validators:
+      - type: passthrough
+    input:
+      tool_name: configure
+      arguments:
+        enabled: true
+        debug: false
+        override: null
+    expected:
+      decision: allow
+      validator_count: 1
