@@ -219,6 +219,7 @@ export class ValidationEngine {
 
         // Collect trace entries when explanation is enabled
         if (collecting) {
+          // A rule is considered "matched" if it changes the decision (deny or modify)
           const isMatch = result.decision === 'deny' || result.decision === 'modify';
           if (isMatch) matchedRules++;
 
@@ -345,13 +346,18 @@ export class ValidationEngine {
 
   /**
    * Build trace entries from a validator result.
+   *
+   * Note: Both 'deny' and 'modify' decisions are classified as 'fail' in the trace
+   * because they represent matched rules that changed the decision outcome.
    */
   private buildTraceEntries(
     validator: NamedValidator,
     result: ValidationResult
   ): ExplanationEntry[] {
     const entries: ExplanationEntry[] = [];
-    const decision = result.decision === 'deny' ? 'fail' : 'pass';
+    // 'deny' and 'modify' are both decision-changing outcomes, so they are 'fail' in trace
+    // Only 'allow' is a 'pass' (no action needed)
+    const traceResult: 'pass' | 'fail' = result.decision === 'allow' ? 'pass' : 'fail';
 
     // If the result has metadata with matched_rules, produce entries per rule
     const matchedRuleIds = result.metadata?.matched_rules as string[] | undefined;
@@ -364,8 +370,8 @@ export class ValidationEngine {
           path: `arguments`,
           expected: `rule ${ruleId} passes`,
           actual: result.reason ?? result.decision,
-          result: decision,
-          message: result.reason ?? `Rule ${ruleId} ${decision === 'pass' ? 'passed' : 'failed'}`,
+          result: traceResult,
+          message: result.reason ?? `Rule ${ruleId} ${traceResult === 'pass' ? 'passed' : 'failed'}`,
         });
       }
     } else {
@@ -377,7 +383,7 @@ export class ValidationEngine {
         path: 'arguments',
         expected: 'allow',
         actual: result.decision,
-        result: decision,
+        result: traceResult,
         message: result.reason ?? `Validator ${validator.name} returned ${result.decision}`,
       });
     }

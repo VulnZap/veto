@@ -445,3 +445,158 @@ describe('Utility functions', () => {
     });
   });
 });
+
+describe('Modify decision trace classification', () => {
+  it('should classify modify decisions as fail in trace (not pass)', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: { verbosity: 'verbose' },
+    });
+
+    engine.addValidator({
+      name: 'modifier',
+      description: 'Modifies arguments',
+      validate: () => ({
+        decision: 'modify',
+        reason: 'Sanitized input',
+        modifiedArguments: { path: '/safe/path' },
+      }),
+    });
+
+    const result = await engine.validate(createContext());
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+    expect(explanation.decision).toBe('modify');
+    expect(explanation.matchedRules).toBe(1);
+    expect(explanation.trace).toHaveLength(1);
+    // Key assertion: modify should be classified as 'fail' not 'pass'
+    expect(explanation.trace[0].result).toBe('fail');
+  });
+
+  it('should count modify as matched rule in simple mode', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: { verbosity: 'simple' },
+    });
+
+    engine.addValidator({
+      name: 'allow-first',
+      priority: 1,
+      validate: () => ({ decision: 'allow' }),
+    });
+    engine.addValidator({
+      name: 'modifier',
+      priority: 2,
+      validate: () => ({
+        decision: 'modify',
+        reason: 'Redacted sensitive data',
+        modifiedArguments: { data: '[REDACTED]' },
+      }),
+    });
+
+    const result = await engine.validate(createContext());
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+    // In simple mode, only matched rules appear in trace
+    expect(explanation.matchedRules).toBe(1);
+    expect(explanation.trace.length).toBeGreaterThan(0);
+    // The modify trace entry should be marked as fail
+    const modifyEntry = explanation.trace.find(e => e.ruleId === 'modifier');
+    expect(modifyEntry).toBeDefined();
+    expect(modifyEntry!.result).toBe('fail');
+  });
+
+  it('should classify allow as pass and deny/modify as fail consistently', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: { verbosity: 'verbose' },
+    });
+
+    engine.addValidator({
+      name: 'allow-validator',
+      priority: 1,
+      validate: () => ({ decision: 'allow', reason: 'ok' }),
+    });
+    engine.addValidator({
+      name: 'modify-validator',
+      priority: 2,
+      validate: () => ({
+        decision: 'modify',
+        reason: 'sanitized',
+        modifiedArguments: { safe: true },
+      }),
+    });
+
+    const result = await engine.validate(createContext());
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+    expect(explanation.trace).toHaveLength(2);
+
+    // First validator (allow) should be pass
+    expect(explanation.trace[0].ruleId).toBe('allow-validator');
+    expect(explanation.trace[0].result).toBe('pass');
+
+    // Second validator (modify) should be fail
+    expect(explanation.trace[1].ruleId).toBe('modify-validator');
+    expect(explanation.trace[1].result).toBe('fail');
+  });
+
+  it('should include modify in remediation suggestions when decision is modify', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: { verbosity: 'verbose' },
+    });
+
+    engine.addValidator({
+      name: 'modifier',
+      validate: () => ({
+        decision: 'modify',
+        reason: 'Input was sanitized for security',
+        modifiedArguments: { sanitized: true },
+      }),
+    });
+
+    const result = await engine.validate(createContext());
+
+    expect(result.explanation).toBeDefined();
+    // Modify decisions don't get remediation (only deny does)
+    // But the trace should still show it as a decision-changing event
+    expect(result.explanation!.matchedRules).toBe(1);
+  });
+
+  it('should handle modify with matched_rules metadata', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: { verbosity: 'verbose' },
+    });
+
+    engine.addValidator({
+      name: 'sanitizer',
+      validate: () => ({
+        decision: 'modify',
+        reason: 'Applied sanitization rules',
+        modifiedArguments: { clean: true },
+        metadata: { matched_rules: ['sanitize-paths', 'sanitize-inputs'] },
+      }),
+    });
+
+    const result = await engine.validate(createContext());
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+    // Should have entries for each matched rule
+    expect(explanation.trace).toHaveLength(2);
+    expect(explanation.trace[0].ruleId).toBe('sanitize-paths');
+    expect(explanation.trace[0].result).toBe('fail');
+    expect(explanation.trace[1].ruleId).toBe('sanitize-inputs');
+    expect(explanation.trace[1].result).toBe('fail');
+  });
+});

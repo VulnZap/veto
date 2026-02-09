@@ -12,6 +12,22 @@ import type { ExplanationVerbosity } from '../types/explanation.js';
 
 const VERSION = '0.1.0';
 
+/** Allowed verbosity values */
+const VALID_VERBOSITY_VALUES: readonly ExplanationVerbosity[] = ['none', 'simple', 'verbose'];
+
+/**
+ * Validate verbosity input and return the value or throw an error.
+ */
+function validateVerbosity(value: string | undefined): ExplanationVerbosity {
+  const verbosity = value ?? 'verbose';
+  if (!VALID_VERBOSITY_VALUES.includes(verbosity as ExplanationVerbosity)) {
+    throw new Error(
+      `Invalid verbosity value: "${verbosity}". Allowed values: ${VALID_VERBOSITY_VALUES.join(', ')}`
+    );
+  }
+  return verbosity as ExplanationVerbosity;
+}
+
 /**
  * Print help message.
  */
@@ -134,7 +150,16 @@ async function main(): Promise<void> {
         console.error('Usage: veto explain <tool_name> <args_json> [--verbosity verbose] [--redact paths]');
         process.exit(1);
       }
-      const verbosity = (stringFlags['verbosity'] ?? 'verbose') as ExplanationVerbosity;
+
+      // Validate verbosity strictly
+      let verbosity: ExplanationVerbosity;
+      try {
+        verbosity = validateVerbosity(stringFlags['verbosity']);
+      } catch (err) {
+        console.error((err as Error).message);
+        process.exit(1);
+      }
+
       const redactPaths = stringFlags['redact'] ? stringFlags['redact'].split(',') : undefined;
       const result = await explain({
         toolName: positional[0],
