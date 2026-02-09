@@ -15,7 +15,9 @@
     },
     "cases": {
       "type": "array",
-      "items": { "$ref": "#/$defs/case" },
+      "items": {
+        "$ref": "#/$defs/case"
+      },
       "minItems": 1
     }
   },
@@ -37,7 +39,9 @@
         },
         "validators": {
           "type": "array",
-          "items": { "$ref": "#/$defs/validator_config" },
+          "items": {
+            "$ref": "#/$defs/validator_config"
+          },
           "description": "Validators to configure on the engine"
         },
         "default_decision": {
@@ -64,13 +68,16 @@
             "blocklist",
             "allowlist",
             "custom_allow",
-            "custom_deny"
+            "custom_deny",
+            "custom_throw"
           ],
           "description": "Built-in validator type or custom test validator"
         },
         "tools": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Tool names for blocklist/allowlist validators"
         },
         "reason": {
@@ -83,7 +90,9 @@
         },
         "tool_filter": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Only run for these tool names"
         },
         "custom_reason": {
