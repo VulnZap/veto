@@ -33,12 +33,33 @@ export interface SigningConfig {
    * Each entry maps a key ID to a base64-encoded Ed25519 public key.
    */
   publicKeys: Record<string, string>;
-  /** Whether to require valid signatures (fail closed). Defaults to true. */
+  /** Whether to require valid signatures (fail closed). Defaults to true when enabled. */
   required?: boolean;
   /** Pin to a specific bundle version */
   pinnedVersion?: string;
   /** Pin to a specific payload hash (SHA-256, hex) */
   pinnedHash?: string;
+}
+
+/**
+ * Default value for signing.required when not explicitly specified.
+ * When signing is enabled, this controls whether verification failures are fatal.
+ * Security-first: defaults to true (fail closed).
+ */
+export const SIGNING_REQUIRED_DEFAULT = true;
+
+/**
+ * Check if signing is required based on config.
+ * Single source of truth for signing.required semantics.
+ *
+ * @param config - Signing configuration (may be undefined)
+ * @returns true if signing is required, false otherwise
+ */
+export function isSigningRequired(config: SigningConfig | undefined): boolean {
+  if (!config || !config.enabled) {
+    return false;
+  }
+  return config.required ?? SIGNING_REQUIRED_DEFAULT;
 }
 
 /**

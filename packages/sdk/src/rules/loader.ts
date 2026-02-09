@@ -12,7 +12,7 @@ import { join, extname } from 'node:path';
 import type { Logger } from '../utils/logger.js';
 import type { Rule, RuleSet, LoadedRules } from './types.js';
 import type { SigningConfig } from '../signing/types.js';
-import { SignatureVerificationError } from '../signing/types.js';
+import { SignatureVerificationError, isSigningRequired } from '../signing/types.js';
 import { readSignedBundle, verifyBundleWithConfig, parseBundlePayload } from '../signing/bundle.js';
 
 /**
@@ -44,19 +44,26 @@ function defaultYamlParser(): never {
 }
 
 /**
- * Loads and manages YAML-based rules.
+ * Create a fresh LoadedRules structure.
  */
-export class RuleLoader {
-  private readonly logger: Logger;
-  private readonly signing?: SigningConfig;
-  private yamlParser: YamlParser = defaultYamlParser;
-  private loadedRules: LoadedRules = {
+function createEmptyLoadedRules(): LoadedRules {
+  return {
     ruleSets: [],
     allRules: [],
     rulesByTool: new Map(),
     globalRules: [],
     sourceFiles: [],
   };
+}
+
+/**
+ * Loads and manages YAML-based rules.
+ */
+export class RuleLoader {
+  private readonly logger: Logger;
+  private readonly signing?: SigningConfig;
+  private yamlParser: YamlParser = defaultYamlParser;
+  private loadedRules: LoadedRules = createEmptyLoadedRules();
 
   constructor(options: RuleLoaderOptions) {
     this.logger = options.logger;
@@ -82,11 +89,14 @@ export class RuleLoader {
   /**
    * Load rules from a directory containing YAML files.
    *
+   * Note: This clears any previously loaded rules to prevent duplicate accumulation.
+   * Use addRules() or loadFromFile() individually if you need to accumulate rules.
+   *
    * Signed bundle (.signed.json) handling:
    * - If signing is not configured: signed bundles are skipped with a warning
    * - If signing.enabled=false: signed bundles are skipped with a warning
    * - If signing.enabled=true and required=false: verification errors are logged, bundle skipped
-   * - If signing.enabled=true and required=true: verification errors are fatal (fail closed)
+   * - If signing.enabled=true and required=true (default): verification errors are fatal (fail closed)
    *
    * @param dirPath - Path to the directory
    * @param recursive - Whether to search subdirectories
@@ -94,6 +104,9 @@ export class RuleLoader {
    */
   loadFromDirectory(dirPath: string, recursive = true): LoadedRules {
     this.logger.info('Loading rules from directory', { path: dirPath, recursive });
+
+    // Clear existing state to prevent duplicate accumulation
+    this.clear();
 
     if (!existsSync(dirPath)) {
       this.logger.warn('Rules directory does not exist', { path: dirPath });
@@ -152,8 +165,8 @@ export class RuleLoader {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      // If signing.required=true, fail closed (re-throw)
-      if (this.signing.required === true) {
+      // Use isSigningRequired for consistent semantics (single source of truth)
+      if (isSigningRequired(this.signing)) {
         this.logger.error(
           'Signed bundle verification failed (signing required)',
           { path: filePath },
@@ -162,7 +175,7 @@ export class RuleLoader {
         throw error;
       }
 
-      // If signing.required=false or undefined, log warning and continue
+      // signing.required=false: log warning and continue
       this.logger.warn('Signed bundle verification failed, skipping', {
         path: filePath,
         error: errorMessage,
@@ -173,10 +186,18 @@ export class RuleLoader {
   /**
    * Load rules from a single YAML file.
    *
+   * Note: This appends to existing rules. Call clear() first if you need fresh state.
+   *
    * @param filePath - Path to the YAML file
    */
   loadFromFile(filePath: string): void {
     this.logger.debug('Loading rules from file', { path: filePath });
+
+    // Check for duplicate source file
+    if (this.loadedRules.sourceFiles.includes(filePath)) {
+      this.logger.debug('Skipping duplicate source file', { path: filePath });
+      return;
+    }
 
     const content = readFileSync(filePath, 'utf-8');
     const parsed = this.yamlParser(content);
@@ -240,6 +261,12 @@ export class RuleLoader {
       );
     }
 
+    // Check for duplicate source file
+    if (this.loadedRules.sourceFiles.includes(filePath)) {
+      this.logger.debug('Skipping duplicate signed bundle', { path: filePath });
+      return;
+    }
+
     const bundle = readSignedBundle(filePath);
     verifyBundleWithConfig(bundle, this.signing);
 
@@ -298,13 +325,7 @@ export class RuleLoader {
    * Clear all loaded rules.
    */
   clear(): void {
-    this.loadedRules = {
-      ruleSets: [],
-      allRules: [],
-      rulesByTool: new Map(),
-      globalRules: [],
-      sourceFiles: [],
-    };
+    this.loadedRules = createEmptyLoadedRules();
     this.logger.debug('Cleared all rules');
   }
 
@@ -317,7 +338,11 @@ export class RuleLoader {
 
     for (const source of sources) {
       if (existsSync(source)) {
-        this.loadFromFile(source);
+        if (source.endsWith('.signed.json')) {
+          this.processSignedBundle(source);
+        } else {
+          this.loadFromFile(source);
+        }
       }
     }
 

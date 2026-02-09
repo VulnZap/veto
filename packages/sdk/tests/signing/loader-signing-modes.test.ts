@@ -284,8 +284,8 @@ describe('RuleLoader signed bundle handling modes', () => {
     });
   });
 
-  describe('signing.required undefined (default to non-fatal)', () => {
-    it('should warn and skip on verification failure when required is undefined', () => {
+  describe('signing.required undefined (defaults to true - fail closed)', () => {
+    it('should fail closed when required is undefined (security-first default)', () => {
       const { publicKey, keyId } = generateSigningKeyPair();
       const otherKey = generateSigningKeyPair();
       const bundle = createSignedBundle(testRuleSet, otherKey.privateKey, otherKey.keyId);
@@ -294,21 +294,15 @@ describe('RuleLoader signed bundle handling modes', () => {
       const signing: SigningConfig = {
         enabled: true,
         publicKeys: { [keyId]: publicKey },
-        // required is NOT set (undefined)
+        // required is NOT set (undefined) - defaults to true
       };
 
       const logger = createMockLogger();
       const loader = new RuleLoader({ logger, signing });
       loader.setYamlParser(parse);
 
-      // Should NOT throw - undefined required defaults to non-fatal
-      expect(() => loader.loadFromDirectory(tmpDir)).not.toThrow();
-
-      // Should warn
-      expect(logger.warn).toHaveBeenCalledWith(
-        'Signed bundle verification failed, skipping',
-        expect.objectContaining({ path: expect.stringContaining('rules.signed.json') })
-      );
+      // Should throw because undefined required defaults to true (fail closed)
+      expect(() => loader.loadFromDirectory(tmpDir)).toThrow(SignatureVerificationError);
     });
   });
 

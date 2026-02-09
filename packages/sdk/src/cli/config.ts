@@ -17,6 +17,7 @@ import type { RuleValidatorConfig } from '../rules/rule-validator.js';
 import type { ValidationAPIConfig } from '../rules/api-client.js';
 import type { YamlParser } from '../rules/loader.js';
 import type { SigningConfig } from '../signing/types.js';
+import { SIGNING_REQUIRED_DEFAULT } from '../signing/types.js';
 
 /**
  * Parsed veto.config.yaml structure.
@@ -166,13 +167,14 @@ export async function loadVetoConfig(
   // Fail mode
   const failMode = rawConfig.validation?.failMode ?? 'closed';
 
-  // Resolve signing config
+  // Resolve signing config using SIGNING_REQUIRED_DEFAULT for consistent semantics
   const signingRaw = rawConfig.signing;
   const signing: SigningConfig | undefined = signingRaw?.enabled
     ? {
         enabled: true,
         publicKeys: signingRaw.publicKeys ?? {},
-        required: signingRaw.required ?? true,
+        // Use the shared constant for default - single source of truth
+        required: signingRaw.required ?? SIGNING_REQUIRED_DEFAULT,
         pinnedVersion: signingRaw.pinnedVersion,
         pinnedHash: signingRaw.pinnedHash,
       }

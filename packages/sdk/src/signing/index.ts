@@ -9,6 +9,8 @@ export {
   SignatureVerificationError,
   BundleFormatError,
   BundlePinError,
+  SIGNING_REQUIRED_DEFAULT,
+  isSigningRequired,
 } from './types.js';
 export {
   generateSigningKeyPair,
@@ -18,6 +20,7 @@ export {
   sha256Hex,
   canonicalize,
 } from './signer.js';
+export type { VerifyBundleOptions } from './bundle.js';
 export {
   createSignedBundle,
   verifyBundle,

@@ -96,23 +96,24 @@ describe('verifyBundle', () => {
       .toThrow(SignatureVerificationError);
   });
 
-  it('should reject with unknown key ID and no matching key', () => {
+  it('should reject with unknown key ID (strict mode by default)', () => {
     const pair1 = generateSigningKeyPair();
     const pair2 = generateSigningKeyPair();
     const bundle = createSignedBundle(testRuleSet, pair1.privateKey, pair1.keyId);
 
+    // Strict mode: key ID must be in trusted keys
     expect(() => verifyBundle(bundle, { [pair2.keyId]: pair2.publicKey }))
       .toThrow(SignatureVerificationError);
   });
 
-  it('should support key rotation - verify with any trusted key', () => {
+  it('should verify when key ID is in trusted keys (multiple keys)', () => {
     const oldKey = generateSigningKeyPair();
     const newKey = generateSigningKeyPair();
 
     // Sign with old key
     const bundle = createSignedBundle(testRuleSet, oldKey.privateKey, oldKey.keyId);
 
-    // Verify succeeds when old key is in the set, even if under different ID
+    // Verify succeeds when old key is in the set under its correct ID
     const publicKeys = {
       [newKey.keyId]: newKey.publicKey,
       [oldKey.keyId]: oldKey.publicKey,
@@ -120,7 +121,18 @@ describe('verifyBundle', () => {
     expect(() => verifyBundle(bundle, publicKeys)).not.toThrow();
   });
 
-  it('should try all keys when key ID does not match', () => {
+  it('should NOT try all keys when key ID not found (strict mode)', () => {
+    const signingKey = generateSigningKeyPair();
+    const bundle = createSignedBundle(testRuleSet, signingKey.privateKey, signingKey.keyId);
+
+    // Key is registered under a different ID - strict mode should fail
+    const publicKeys = {
+      'rotated-key-id': signingKey.publicKey,
+    };
+    expect(() => verifyBundle(bundle, publicKeys)).toThrow(SignatureVerificationError);
+  });
+
+  it('should try all keys when allowKeyRotation=true', () => {
     const signingKey = generateSigningKeyPair();
     const bundle = createSignedBundle(testRuleSet, signingKey.privateKey, signingKey.keyId);
 
@@ -128,7 +140,8 @@ describe('verifyBundle', () => {
     const publicKeys = {
       'rotated-key-id': signingKey.publicKey,
     };
-    expect(() => verifyBundle(bundle, publicKeys)).not.toThrow();
+    // With allowKeyRotation, should succeed
+    expect(() => verifyBundle(bundle, publicKeys, { allowKeyRotation: true })).not.toThrow();
   });
 });
 
@@ -140,6 +153,20 @@ describe('verifyBundleWithConfig', () => {
     const config: SigningConfig = {
       enabled: true,
       publicKeys: { [keyId]: publicKey },
+      required: true,
+    };
+
+    expect(() => verifyBundleWithConfig(bundle, config)).not.toThrow();
+  });
+
+  it('should support key rotation in verifyBundleWithConfig', () => {
+    const signingKey = generateSigningKeyPair();
+    const bundle = createSignedBundle(testRuleSet, signingKey.privateKey, signingKey.keyId);
+
+    // Key registered under different ID - verifyBundleWithConfig allows rotation
+    const config: SigningConfig = {
+      enabled: true,
+      publicKeys: { 'new-key-id': signingKey.publicKey },
       required: true,
     };
 

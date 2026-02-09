@@ -46,39 +46,69 @@ export function createSignedBundle(
 }
 
 /**
+ * Options for bundle verification.
+ */
+export interface VerifyBundleOptions {
+  /**
+   * If true, when bundle.publicKeyId is not found in publicKeys, try all keys.
+   * This supports key rotation scenarios where the key ID may have changed.
+   * Default: false (strict mode - require explicit key ID match)
+   */
+  allowKeyRotation?: boolean;
+}
+
+/**
  * Verify a signed bundle against a set of trusted public keys.
  *
- * Tries each matching public key (by ID) until one succeeds, supporting key rotation.
+ * Security semantics:
+ * - If bundle.publicKeyId exists in publicKeys, ONLY that key is tried
+ * - If bundle.publicKeyId is NOT in publicKeys:
+ *   - With allowKeyRotation=false (default): fail immediately
+ *   - With allowKeyRotation=true: try all keys (for rotation scenarios)
  *
  * @param bundle - The signed bundle to verify
  * @param publicKeys - Map of key ID to base64-encoded public key
+ * @param options - Verification options
  * @throws SignatureVerificationError if no key can verify the signature
  * @throws BundleFormatError if the bundle is malformed
  */
 export function verifyBundle(
   bundle: SignedBundle,
-  publicKeys: Record<string, string>
+  publicKeys: Record<string, string>,
+  options: VerifyBundleOptions = {}
 ): void {
   validateBundleFormat(bundle);
 
+  const { allowKeyRotation = false } = options;
   const matchingKey = publicKeys[bundle.publicKeyId];
-  if (!matchingKey) {
-    // Key rotation: try all keys if the ID doesn't match
-    for (const pubKey of Object.values(publicKeys)) {
-      if (verifySignature(bundle.payload, bundle.signature, pubKey)) {
-        return;
-      }
+
+  if (matchingKey) {
+    // Key ID found - use only this key (strict trust)
+    if (!verifySignature(bundle.payload, bundle.signature, matchingKey)) {
+      throw new SignatureVerificationError(
+        `Signature verification failed for key ID "${bundle.publicKeyId}"`
+      );
     }
+    return;
+  }
+
+  // Key ID not found in trusted keys
+  if (!allowKeyRotation) {
     throw new SignatureVerificationError(
-      `No trusted public key found for key ID "${bundle.publicKeyId}" and no other key could verify the signature`
+      `Bundle key ID "${bundle.publicKeyId}" is not in trusted public keys`
     );
   }
 
-  if (!verifySignature(bundle.payload, bundle.signature, matchingKey)) {
-    throw new SignatureVerificationError(
-      `Signature verification failed for key ID "${bundle.publicKeyId}"`
-    );
+  // Key rotation mode: try all keys
+  for (const pubKey of Object.values(publicKeys)) {
+    if (verifySignature(bundle.payload, bundle.signature, pubKey)) {
+      return; // Verification succeeded with rotated key
+    }
   }
+
+  throw new SignatureVerificationError(
+    `No trusted public key could verify the signature (bundle key ID: "${bundle.publicKeyId}")`
+  );
 }
 
 /**
@@ -94,7 +124,8 @@ export function verifyBundleWithConfig(
   bundle: SignedBundle,
   config: SigningConfig
 ): void {
-  verifyBundle(bundle, config.publicKeys);
+  // Use allowKeyRotation=true to support key rotation scenarios in production
+  verifyBundle(bundle, config.publicKeys, { allowKeyRotation: true });
 
   if (config.pinnedVersion && bundle.version !== config.pinnedVersion) {
     throw new BundlePinError(
