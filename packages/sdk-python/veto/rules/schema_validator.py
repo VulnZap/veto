@@ -65,7 +65,7 @@ def validate_policy_ir(data: Any) -> None:
             PolicyValidationError(
                 path=_format_path(e),
                 message=e.message,
-                keyword=e.validator,  # type: ignore[arg-type]
+                keyword=e.validator,
             )
             for e in raw_errors
         ]

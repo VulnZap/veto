@@ -4,7 +4,9 @@ Policy IR v1 JSON Schema.
 Embedded copy of policy-ir-v1.schema.json for use without filesystem access.
 """
 
-POLICY_IR_V1_SCHEMA: dict = {
+from typing import Any, Dict
+
+POLICY_IR_V1_SCHEMA: Dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://veto.dev/schemas/policy-ir-v1.json",
     "title": "Veto Policy IR v1",
