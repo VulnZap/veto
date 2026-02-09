@@ -110,5 +110,15 @@ export type {
   GoogleFunctionCall,
 } from './providers/types.js';
 
+// Browser sanitization (for prompt injection defense)
+export { BrowserSanitizer, createSanitizer } from './browser/index.js';
+export type {
+  SanitizationMode,
+  SanitizationResult,
+  SanitizationReport,
+  SanitizationEntry,
+  SanitizerConfig,
+} from './browser/types.js';
+
 // CLI init function (for programmatic use)
 export { init, isInitialized } from './cli/init.js';
