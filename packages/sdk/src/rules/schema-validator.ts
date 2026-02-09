@@ -64,7 +64,17 @@ function formatErrors(errors: AjvErrorObject[]): PolicyValidationError[] {
 export function validatePolicyIR(data: unknown): void {
   const validate = getValidator();
   const valid = validate(data);
-  if (!valid && validate.errors) {
-    throw new PolicySchemaError(formatErrors(validate.errors));
+  if (!valid) {
+    if (validate.errors && validate.errors.length > 0) {
+      throw new PolicySchemaError(formatErrors(validate.errors));
+    }
+    // Fail-safe: AJV returned false but no errors array - still reject
+    throw new PolicySchemaError([
+      {
+        path: '/',
+        message: 'Schema validation failed',
+        keyword: 'unknown',
+      },
+    ]);
   }
 }
