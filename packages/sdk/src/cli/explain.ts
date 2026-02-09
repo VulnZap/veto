@@ -7,8 +7,8 @@
  * @module cli/explain
  */
 
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { resolve, join, extname } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { DecisionExplanation, ExplanationVerbosity } from '../types/explanation.js';
 import type { Rule, RuleSet } from '../rules/types.js';
@@ -175,9 +175,7 @@ function loadRulesFromDir(dir: string): Rule[] {
   const rules: Rule[] = [];
 
   try {
-    const { readdirSync, statSync } = require('node:fs');
-    const { extname } = require('node:path');
-    const entries = readdirSync(dir) as string[];
+    const entries = readdirSync(dir);
 
     for (const entry of entries) {
       const fullPath = join(dir, entry);

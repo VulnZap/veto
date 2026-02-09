@@ -135,3 +135,43 @@ describe('CLI bin', () => {
     });
   });
 });
+
+describe('CLI ESM compatibility', () => {
+  it('should run explain command without require() errors in ESM mode', async () => {
+    // This test verifies the CLI runs without CommonJS require() errors
+    // The explain command loads rules from disk using fs/path operations
+    const { code, stderr } = await runCli([
+      'explain',
+      'test_tool',
+      '{"key":"value"}',
+      '--verbosity',
+      'verbose',
+      '--quiet',
+    ]);
+
+    // Should not contain any require() related errors
+    expect(stderr).not.toContain('require is not defined');
+    expect(stderr).not.toContain('require is not a function');
+    expect(stderr).not.toContain('ERR_REQUIRE_ESM');
+
+    // The command may fail because no rules exist, but that's expected
+    // The key is that it doesn't fail due to ESM/CJS incompatibility
+  });
+
+  it('should handle explain with --redact flag correctly', async () => {
+    const { stderr } = await runCli([
+      'explain',
+      'test_tool',
+      '{"password":"secret123","username":"admin"}',
+      '--verbosity',
+      'verbose',
+      '--redact',
+      'arguments.password',
+      '--quiet',
+    ]);
+
+    // Should not error on the redact flag parsing
+    expect(stderr).not.toContain('Invalid');
+    expect(stderr).not.toContain('require is not defined');
+  });
+});

@@ -225,7 +225,7 @@ export class ValidationEngine {
 
           if (verbosity === 'verbose' || isMatch) {
             trace.push(
-              ...this.buildTraceEntries(validator, result)
+              ...this.buildTraceEntries(validator, result, currentContext)
             );
           }
         }
@@ -349,38 +349,64 @@ export class ValidationEngine {
    *
    * Note: Both 'deny' and 'modify' decisions are classified as 'fail' in the trace
    * because they represent matched rules that changed the decision outcome.
+   *
+   * Trace entries include fine-grained paths when validators provide metadata
+   * about which fields were checked (via metadata.checked_fields or metadata.field_path).
    */
   private buildTraceEntries(
     validator: NamedValidator,
-    result: ValidationResult
+    result: ValidationResult,
+    context: ValidationContext
   ): ExplanationEntry[] {
     const entries: ExplanationEntry[] = [];
     // 'deny' and 'modify' are both decision-changing outcomes, so they are 'fail' in trace
     // Only 'allow' is a 'pass' (no action needed)
     const traceResult: 'pass' | 'fail' = result.decision === 'allow' ? 'pass' : 'fail';
 
+    // Extract fine-grained paths from metadata if available
+    const checkedFields = result.metadata?.checked_fields as string[] | undefined;
+    const fieldPath = result.metadata?.field_path as string | undefined;
+
     // If the result has metadata with matched_rules, produce entries per rule
     const matchedRuleIds = result.metadata?.matched_rules as string[] | undefined;
     if (matchedRuleIds && matchedRuleIds.length > 0) {
       for (const ruleId of matchedRuleIds) {
+        // Use fine-grained path if available, otherwise fall back to coarse path
+        const entryPath = fieldPath ?? (checkedFields?.[0] ? `arguments.${checkedFields[0]}` : 'arguments');
         entries.push({
           ruleId,
           ruleName: validator.description,
           constraint: `${validator.name}.rule_match`,
-          path: `arguments`,
+          path: entryPath,
           expected: `rule ${ruleId} passes`,
           actual: result.reason ?? result.decision,
           result: traceResult,
           message: result.reason ?? `Rule ${ruleId} ${traceResult === 'pass' ? 'passed' : 'failed'}`,
         });
       }
+    } else if (checkedFields && checkedFields.length > 0) {
+      // Emit one entry per checked field for fine-grained redaction support
+      for (const field of checkedFields) {
+        const fieldValue = this.getFieldValue(context.arguments, field);
+        entries.push({
+          ruleId: validator.name,
+          ruleName: validator.description,
+          constraint: `${validator.name}.field_check`,
+          path: `arguments.${field}`,
+          expected: 'valid',
+          actual: fieldValue,
+          result: traceResult,
+          message: result.reason ?? `Validator ${validator.name} checked field ${field}`,
+        });
+      }
     } else {
-      // Single entry for the validator
+      // Single entry for the validator with field_path if available
+      const entryPath = fieldPath ?? 'arguments';
       entries.push({
         ruleId: validator.name,
         ruleName: validator.description,
         constraint: `${validator.name}.decision`,
-        path: 'arguments',
+        path: entryPath,
         expected: 'allow',
         actual: result.decision,
         result: traceResult,
@@ -389,6 +415,21 @@ export class ValidationEngine {
     }
 
     return entries;
+  }
+
+  /**
+   * Get a nested field value from arguments.
+   */
+  private getFieldValue(args: Record<string, unknown>, path: string): unknown {
+    const parts = path.split('.');
+    let current: unknown = args;
+    for (const part of parts) {
+      if (current === null || current === undefined || typeof current !== 'object') {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+    return current;
   }
 
   /**

@@ -600,3 +600,177 @@ describe('Modify decision trace classification', () => {
     expect(explanation.trace[1].result).toBe('fail');
   });
 });
+
+describe('Fine-grained redaction paths', () => {
+  it('should emit fine-grained paths when validator provides checked_fields metadata', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: {
+        verbosity: 'verbose',
+        redactPaths: ['arguments.password'],
+      },
+    });
+
+    engine.addValidator({
+      name: 'field-checker',
+      validate: (ctx) => ({
+        decision: 'deny',
+        reason: 'Password is weak',
+        metadata: {
+          checked_fields: ['password', 'username'],
+        },
+      }),
+    });
+
+    const result = await engine.validate(createContext({
+      arguments: { password: 'secret123', username: 'admin' },
+    }));
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+
+    // Should have entries for each checked field
+    expect(explanation.trace.length).toBe(2);
+
+    // Find the password entry
+    const passwordEntry = explanation.trace.find(e => e.path === 'arguments.password');
+    expect(passwordEntry).toBeDefined();
+    expect(passwordEntry!.actual).toBe('[REDACTED]');
+
+    // Find the username entry - should NOT be redacted
+    const usernameEntry = explanation.trace.find(e => e.path === 'arguments.username');
+    expect(usernameEntry).toBeDefined();
+    expect(usernameEntry!.actual).toBe('admin');
+  });
+
+  it('should use field_path from metadata for single field validation', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: {
+        verbosity: 'verbose',
+        redactPaths: ['arguments.credentials.apiKey'],
+      },
+    });
+
+    engine.addValidator({
+      name: 'api-key-checker',
+      validate: () => ({
+        decision: 'deny',
+        reason: 'API key is invalid',
+        metadata: {
+          field_path: 'arguments.credentials.apiKey',
+        },
+      }),
+    });
+
+    const result = await engine.validate(createContext({
+      arguments: { credentials: { apiKey: 'sk-secret-key-123' } },
+    }));
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+    expect(explanation.trace).toHaveLength(1);
+    expect(explanation.trace[0].path).toBe('arguments.credentials.apiKey');
+    expect(explanation.trace[0].actual).toBe('[REDACTED]');
+  });
+
+  it('should redact matched_rules entries when field_path is provided', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: {
+        verbosity: 'verbose',
+        redactPaths: ['arguments.secret'],
+      },
+    });
+
+    engine.addValidator({
+      name: 'rule-validator',
+      validate: () => ({
+        decision: 'deny',
+        reason: 'Secret contains forbidden pattern',
+        metadata: {
+          matched_rules: ['secret-pattern-rule'],
+          field_path: 'arguments.secret',
+        },
+      }),
+    });
+
+    const result = await engine.validate(createContext({
+      arguments: { secret: 'my-secret-value', public: 'visible' },
+    }));
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+    expect(explanation.trace).toHaveLength(1);
+    expect(explanation.trace[0].ruleId).toBe('secret-pattern-rule');
+    expect(explanation.trace[0].path).toBe('arguments.secret');
+    // The actual field contains the reason, not the value, but path-based redaction should still work
+  });
+
+  it('should fall back to coarse path when no fine-grained metadata provided', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: { verbosity: 'verbose' },
+    });
+
+    engine.addValidator({
+      name: 'simple-validator',
+      validate: () => ({
+        decision: 'deny',
+        reason: 'blocked',
+      }),
+    });
+
+    const result = await engine.validate(createContext());
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+    expect(explanation.trace).toHaveLength(1);
+    expect(explanation.trace[0].path).toBe('arguments');
+  });
+
+  it('should redact nested field values in checked_fields entries', async () => {
+    const engine = new ValidationEngine({
+      logger: createMockLogger(),
+      defaultDecision: 'allow',
+      explanation: {
+        verbosity: 'verbose',
+        redactPaths: ['arguments.config.auth.token'],
+      },
+    });
+
+    engine.addValidator({
+      name: 'nested-checker',
+      validate: () => ({
+        decision: 'allow',
+        metadata: {
+          checked_fields: ['config.auth.token', 'config.name'],
+        },
+      }),
+    });
+
+    const result = await engine.validate(createContext({
+      arguments: {
+        config: {
+          auth: { token: 'bearer-xyz-secret' },
+          name: 'my-config',
+        },
+      },
+    }));
+
+    expect(result.explanation).toBeDefined();
+    const explanation = result.explanation!;
+
+    const tokenEntry = explanation.trace.find(e => e.path === 'arguments.config.auth.token');
+    expect(tokenEntry).toBeDefined();
+    expect(tokenEntry!.actual).toBe('[REDACTED]');
+
+    const nameEntry = explanation.trace.find(e => e.path === 'arguments.config.name');
+    expect(nameEntry).toBeDefined();
+    expect(nameEntry!.actual).toBe('my-config');
+  });
+});
