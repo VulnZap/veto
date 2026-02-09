@@ -50,3 +50,35 @@ Reason comparison uses normalization: collapse whitespace, trim, lowercase. The 
 1. Create a new YAML file in `fixtures/`
 2. Follow the schema in `schema/fixture.schema.json`
 3. Run both TS and Python runners to verify
+
+## Prerequisites
+
+### TypeScript
+
+Requires the SDK to be built:
+
+```bash
+pnpm build
+```
+
+### Python
+
+Requires the `veto` package to be installed and accessible to `python3`:
+
+```bash
+# Option A: Install in virtualenv
+cd packages/sdk-python
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+
+# Option B: Install globally/user
+pip install -e packages/sdk-python
+```
+
+Then run from repo root:
+
+```bash
+pnpm conformance:ts   # TypeScript only
+pnpm conformance:py   # Python only
+pnpm conformance      # Both
+```

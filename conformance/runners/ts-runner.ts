@@ -117,7 +117,8 @@ function buildContext(input: FixtureCase['input']): ValidationContext {
 }
 
 const fixturesDir = join(import.meta.dirname, '..', 'fixtures');
-const fixtureFiles = readdirSync(fixturesDir).filter((f) => f.endsWith('.yaml'));
+// Sort fixture files for deterministic test execution order across platforms
+const fixtureFiles = readdirSync(fixturesDir).filter((f) => f.endsWith('.yaml')).sort();
 
 for (const file of fixtureFiles) {
   const content = readFileSync(join(fixturesDir, file), 'utf-8');

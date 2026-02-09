@@ -21,7 +21,7 @@
     "version": "changeset version",
     "release": "pnpm build && changeset publish",
     "conformance:ts": "pnpm --filter veto-sdk exec vitest run --config ../../conformance/vitest.config.ts",
-    "conformance:py": "packages/sdk-python/.venv/bin/python conformance/runners/py_runner.py",
+    "conformance:py": "python3 conformance/runners/py_runner.py",
     "conformance": "pnpm conformance:ts && pnpm conformance:py",
     "prepare": "husky"
   },
