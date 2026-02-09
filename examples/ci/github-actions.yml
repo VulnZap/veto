@@ -1,0 +1,107 @@
+# Veto Policy CI Pipeline
+# Validates, tests, and deploys Veto policy files on pull request and merge.
+#
+# Prerequisites:
+#   - VETO_API_KEY secret in repository settings (for deploy step)
+#   - VETO_API_URL secret or variable pointing to your Veto server
+
+name: Veto Policy CI
+
+on:
+  pull_request:
+    paths:
+      - "veto/**"
+  push:
+    branches: [main]
+    paths:
+      - "veto/**"
+
+jobs:
+  validate:
+    name: Validate policies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install -g veto-sdk
+
+      - name: Validate policy schema
+        run: veto validate --json > validation-report.json
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-report
+          path: validation-report.json
+
+  test:
+    name: Test policies
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install -g veto-sdk
+
+      - name: Run policy tests
+        run: veto test --json > test-report.json
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: test-report.json
+
+  diff:
+    name: Policy diff
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install -g veto-sdk
+
+      - name: Diff against base branch
+        run: |
+          git show origin/${{ github.base_ref }}:veto/rules/defaults.yaml > /tmp/base-rules.yaml 2>/dev/null || exit 0
+          veto diff /tmp/base-rules.yaml veto/rules/defaults.yaml --json || true
+
+  deploy:
+    name: Deploy policies
+    runs-on: ubuntu-latest
+    needs: [validate, test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install -g veto-sdk
+
+      - name: Dry run
+        run: veto deploy . --dry-run --json
+
+      - name: Deploy to production
+        env:
+          VETO_API_KEY: ${{ secrets.VETO_API_KEY }}
+          VETO_API_URL: ${{ vars.VETO_API_URL }}
+        run: veto deploy . --target production --json

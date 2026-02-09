@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 
-/**
- * Veto CLI entry point.
- *
- * @module cli/bin
- */
-
 import { init } from './init.js';
+import { validate } from './commands/validate.js';
+import { test } from './commands/test.js';
+import { diff } from './commands/diff.js';
+import { simulate } from './commands/simulate.js';
+import { deploy } from './commands/deploy.js';
 
 const VERSION = '0.1.0';
 
-/**
- * Print help message.
- */
 function printHelp(): void {
   console.log(`
 Veto - AI Agent Tool Call Guardrail
@@ -21,85 +17,109 @@ Usage:
   veto <command> [options]
 
 Commands:
-  init          Initialize Veto in the current directory
-  version       Show version information
-  help          Show this help message
+  init                              Initialize Veto in the current directory
+  validate [path]                   Validate policy files against schema
+  test [path]                       Run policy test fixtures
+  diff <path1> <path2>             Semantic diff between two policy files
+  simulate <policy> <input>         Dry-run a tool call against a policy
+  deploy <path> [--target <env>]    Deploy policies to cloud
+  version                           Show version information
+  help                              Show this help message
 
-Options:
-  --force, -f   Force overwrite existing files (init)
-  --quiet, -q   Suppress output
+Global Options:
+  --json        Output as JSON
+  --verbose     Verbose output
   --help, -h    Show help
 
+Command Options:
+  init:
+    --force, -f   Force overwrite existing files
+    --quiet, -q   Suppress output
+
+  deploy:
+    --target <env>    Target environment (default: "default")
+    --api-url <url>   Veto server URL (or set VETO_API_URL)
+    --api-key <key>   API key (or set VETO_API_KEY)
+    --dry-run         Show what would be deployed without deploying
+
+Exit Codes:
+  0  Success
+  1  Failure (validation errors, test failures, deploy errors)
+  2  Usage error (invalid arguments)
+
 Examples:
-  veto init           Initialize Veto in current directory
-  veto init --force   Reinitialize, overwriting existing files
+  veto init                          Initialize Veto in current directory
+  veto validate                      Validate all policy files
+  veto validate ./veto/rules         Validate specific directory
+  veto test                          Run all policy tests
+  veto diff old.yaml new.yaml        Compare two policy files
+  veto simulate policy.yaml input.yaml  Dry-run a tool call
+  veto deploy . --target prod        Deploy policies
+  veto deploy . --dry-run            Preview deployment
 `);
 }
 
-/**
- * Print version.
- */
 function printVersion(): void {
   console.log(`veto v${VERSION}`);
 }
 
-/**
- * Parse command line arguments.
- */
-function parseArgs(args: string[]): {
+interface ParsedArgs {
   command: string;
+  positionals: string[];
   flags: Record<string, boolean>;
-} {
+  options: Record<string, string>;
+}
+
+function parseArgs(args: string[]): ParsedArgs {
   const flags: Record<string, boolean> = {};
+  const options: Record<string, string> = {};
+  const positionals: string[] = [];
   let command = '';
 
-  for (const arg of args) {
+  const valueFlags = new Set(['target', 'api-url', 'api-key']);
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg.startsWith('--')) {
       const flag = arg.slice(2);
-      flags[flag] = true;
+      if (valueFlags.has(flag) && i + 1 < args.length) {
+        options[flag] = args[++i];
+      } else {
+        flags[flag] = true;
+      }
     } else if (arg.startsWith('-')) {
       const shortFlags = arg.slice(1).split('');
       for (const f of shortFlags) {
         switch (f) {
-          case 'f':
-            flags['force'] = true;
-            break;
-          case 'q':
-            flags['quiet'] = true;
-            break;
-          case 'h':
-            flags['help'] = true;
-            break;
+          case 'f': flags['force'] = true; break;
+          case 'q': flags['quiet'] = true; break;
+          case 'h': flags['help'] = true; break;
         }
       }
     } else if (!command) {
       command = arg;
+    } else {
+      positionals.push(arg);
     }
   }
 
-  return { command, flags };
+  return { command, positionals, flags, options };
 }
 
-/**
- * Main CLI entry point.
- */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const { command, flags } = parseArgs(args);
+  const { command, positionals, flags, options } = parseArgs(args);
 
-  // Handle help flag
   if (flags['help'] || command === 'help') {
     printHelp();
     process.exit(0);
   }
 
-  // Handle version flag or command
   if (flags['version'] || command === 'version') {
     printVersion();
     process.exit(0);
   }
 
-  // Handle commands
   switch (command) {
     case 'init': {
       const result = await init({
@@ -110,8 +130,75 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'validate': {
+      const result = await validate({
+        path: positionals[0],
+        json: flags['json'],
+        verbose: flags['verbose'],
+      });
+      process.exit(result.valid ? 0 : 1);
+      break;
+    }
+
+    case 'test': {
+      const result = await test({
+        path: positionals[0],
+        json: flags['json'],
+        verbose: flags['verbose'],
+      });
+      process.exit(result.success ? 0 : 1);
+      break;
+    }
+
+    case 'diff': {
+      if (positionals.length < 2) {
+        console.error('Usage: veto diff <path1> <path2>');
+        process.exit(2);
+      }
+      await diff({
+        path1: positionals[0],
+        path2: positionals[1],
+        json: flags['json'],
+        verbose: flags['verbose'],
+      });
+      process.exit(0);
+      break;
+    }
+
+    case 'simulate': {
+      if (positionals.length < 2) {
+        console.error('Usage: veto simulate <policy> <input>');
+        process.exit(2);
+      }
+      const result = await simulate({
+        policy: positionals[0],
+        input: positionals[1],
+        json: flags['json'],
+        verbose: flags['verbose'],
+      });
+      process.exit(result.decision === 'block' ? 1 : 0);
+      break;
+    }
+
+    case 'deploy': {
+      if (positionals.length < 1) {
+        console.error('Usage: veto deploy <path> [--target <env>]');
+        process.exit(2);
+      }
+      const result = await deploy({
+        path: positionals[0],
+        target: options['target'],
+        apiUrl: options['api-url'],
+        apiKey: options['api-key'],
+        dryRun: flags['dry-run'],
+        json: flags['json'],
+        verbose: flags['verbose'],
+      });
+      process.exit(result.success ? 0 : 1);
+      break;
+    }
+
     case '': {
-      // No command provided
       console.log('Veto - AI Agent Tool Call Guardrail');
       console.log('');
       console.log('Run "veto help" for usage information.');
@@ -123,12 +210,11 @@ async function main(): Promise<void> {
     default: {
       console.error(`Unknown command: ${command}`);
       console.error('Run "veto help" for usage information.');
-      process.exit(1);
+      process.exit(2);
     }
   }
 }
 
-// Run the CLI
 main().catch((error) => {
   console.error('Error:', error.message);
   process.exit(1);
