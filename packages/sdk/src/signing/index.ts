@@ -12,6 +12,7 @@ export {
 } from './types.js';
 export {
   generateSigningKeyPair,
+  deriveKeyId,
   signPayload,
   verifySignature,
   sha256Hex,

@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, extname } from 'node:path';
 import { parse } from 'yaml';
-import { generateSigningKeyPair, sha256Hex } from '../signing/signer.js';
+import { generateSigningKeyPair, deriveKeyId } from '../signing/signer.js';
 import {
   createSignedBundle,
   readSignedBundle,
@@ -68,17 +68,17 @@ export function signCommand(options: SignOptions): void {
 
   const privateKey = readFileSync(keyPath, 'utf-8').trim();
 
-  // Read the key ID from the sibling .keyid file, or derive it
+  // Read the key ID from the sibling .keyid file, or derive it from public key
   const keyIdPath = keyPath.replace(/\.key$/, '.keyid');
   let keyId: string;
   if (existsSync(keyIdPath)) {
     keyId = readFileSync(keyIdPath, 'utf-8').trim();
   } else {
-    // Derive from the public key if available
+    // Derive from the public key if available (hash DER bytes, not base64 string)
     const pubPath = keyPath.replace(/\.key$/, '.pub');
     if (existsSync(pubPath)) {
       const pubKey = readFileSync(pubPath, 'utf-8').trim();
-      keyId = sha256Hex(pubKey).slice(0, 16);
+      keyId = deriveKeyId(pubKey);
     } else {
       keyId = 'default';
     }
@@ -129,13 +129,13 @@ export function verifyCommand(options: VerifyOptions): boolean {
 
   const publicKey = readFileSync(keyPath, 'utf-8').trim();
 
-  // Read key ID
+  // Read key ID from sibling .keyid file, or derive from public key
   const keyIdPath = keyPath.replace(/\.pub$/, '.keyid');
   let keyId: string;
   if (existsSync(keyIdPath)) {
     keyId = readFileSync(keyIdPath, 'utf-8').trim();
   } else {
-    keyId = 'default';
+    keyId = deriveKeyId(publicKey);
   }
 
   const bundle = readSignedBundle(bundlePath);

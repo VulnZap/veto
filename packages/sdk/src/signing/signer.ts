@@ -14,6 +14,18 @@ import {
 } from 'node:crypto';
 
 /**
+ * Derive a key ID from a base64-encoded DER (SPKI) public key.
+ * The key ID is the first 16 hex characters of the SHA-256 hash of the DER bytes.
+ *
+ * @param publicKeyBase64 - Base64-encoded DER (SPKI) public key
+ * @returns 16-character hex key ID
+ */
+export function deriveKeyId(publicKeyBase64: string): string {
+  const derBytes = Buffer.from(publicKeyBase64, 'base64');
+  return createHash('sha256').update(derBytes).digest('hex').slice(0, 16);
+}
+
+/**
  * Generate a new Ed25519 key pair for signing policy bundles.
  *
  * @returns Object with base64-encoded public and private keys, plus a key ID
@@ -27,10 +39,11 @@ export function generateSigningKeyPair(): {
 
   const pubDer = publicKey.export({ type: 'spki', format: 'der' });
   const privDer = privateKey.export({ type: 'pkcs8', format: 'der' });
-  const keyId = createHash('sha256').update(pubDer).digest('hex').slice(0, 16);
+  const publicKeyBase64 = pubDer.toString('base64');
+  const keyId = deriveKeyId(publicKeyBase64);
 
   return {
-    publicKey: pubDer.toString('base64'),
+    publicKey: publicKeyBase64,
     privateKey: privDer.toString('base64'),
     keyId,
   };
