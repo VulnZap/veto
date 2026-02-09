@@ -8,3 +8,5 @@ export * from './types.js';
 export * from './loader.js';
 export * from './api-client.js';
 export * from './rule-validator.js';
+export * from './constraint-errors.js';
+export * from './constraint-engine.js';

@@ -74,6 +74,19 @@ export type {
   ValidationAPIResponse,
 } from './rules/types.js';
 
+// Constraint engine
+export {
+  ConstraintErrorCode,
+  type ConstraintError,
+} from './rules/constraint-errors.js';
+export {
+  evaluateConstraints,
+  resolvePath,
+  createConstraintValidator,
+  type ConstraintEngineOptions,
+  type ConstraintResult,
+} from './rules/constraint-engine.js';
+
 // Custom provider types
 export type {
   CustomConfig,
