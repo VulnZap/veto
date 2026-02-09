@@ -16,6 +16,7 @@ import { RuleValidator } from '../rules/rule-validator.js';
 import type { RuleValidatorConfig } from '../rules/rule-validator.js';
 import type { ValidationAPIConfig } from '../rules/api-client.js';
 import type { YamlParser } from '../rules/loader.js';
+import type { SigningConfig } from '../signing/types.js';
 
 /**
  * Parsed veto.config.yaml structure.
@@ -45,6 +46,13 @@ export interface VetoConfigFile {
     sessionHeader?: string;
     agentHeader?: string;
   };
+  signing?: {
+    enabled?: boolean;
+    publicKeys?: Record<string, string>;
+    required?: boolean;
+    pinnedVersion?: string;
+    pinnedHash?: string;
+  };
 }
 
 /**
@@ -71,6 +79,8 @@ export interface LoadedVetoConfig {
   logger: Logger;
   /** Rule validator (call initialize() before use) */
   validator: RuleValidator;
+  /** Resolved signing configuration (if configured) */
+  signing?: SigningConfig;
 }
 
 /**
@@ -156,6 +166,18 @@ export async function loadVetoConfig(
   // Fail mode
   const failMode = rawConfig.validation?.failMode ?? 'closed';
 
+  // Resolve signing config
+  const signingRaw = rawConfig.signing;
+  const signing: SigningConfig | undefined = signingRaw?.enabled
+    ? {
+        enabled: true,
+        publicKeys: signingRaw.publicKeys ?? {},
+        required: signingRaw.required ?? true,
+        pinnedVersion: signingRaw.pinnedVersion,
+        pinnedHash: signingRaw.pinnedHash,
+      }
+    : undefined;
+
   // Create rule validator config
   const validatorConfig: RuleValidatorConfig = {
     api: apiConfig,
@@ -165,6 +187,7 @@ export async function loadVetoConfig(
     failMode: failMode,
     sessionId: options.sessionId,
     agentId: options.agentId,
+    signing,
   };
 
   // Create validator
@@ -184,6 +207,7 @@ export async function loadVetoConfig(
     recursiveRules,
     logger,
     validator,
+    signing,
   };
 }
 

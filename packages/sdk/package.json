@@ -99,6 +99,10 @@
     "./benchmark": {
       "types": "./dist/benchmark/index.d.ts",
       "import": "./dist/benchmark/index.js"
+    },
+    "./signing": {
+      "types": "./dist/signing/index.d.ts",
+      "import": "./dist/signing/index.js"
     }
   },
   "dependencies": {

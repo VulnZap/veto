@@ -7,12 +7,10 @@
  */
 
 import { init } from './init.js';
+import { signCommand, verifyCommand, keygenCommand } from './sign-commands.js';
 
 const VERSION = '0.1.0';
 
-/**
- * Print help message.
- */
 function printHelp(): void {
   console.log(`
 Veto - AI Agent Tool Call Guardrail
@@ -22,6 +20,9 @@ Usage:
 
 Commands:
   init          Initialize Veto in the current directory
+  sign          Sign a rules directory into a .signed.json bundle
+  verify        Verify a signed bundle file
+  keygen        Generate a new Ed25519 signing key pair
   version       Show version information
   help          Show this help message
 
@@ -29,34 +30,43 @@ Options:
   --force, -f   Force overwrite existing files (init)
   --quiet, -q   Suppress output
   --help, -h    Show help
+  --key <path>  Path to private key (sign) or public key (verify)
+  --input <dir> Rules directory to sign (default: ./veto/rules)
+  --output <f>  Output file for signed bundle (default: rules.signed.json)
+  --bundle <f>  Signed bundle file to verify
 
 Examples:
-  veto init           Initialize Veto in current directory
-  veto init --force   Reinitialize, overwriting existing files
+  veto init                     Initialize Veto in current directory
+  veto keygen --output keys/    Generate signing key pair
+  veto sign --key veto.key      Sign rules with private key
+  veto verify --key veto.pub --bundle rules.signed.json
 `);
 }
 
-/**
- * Print version.
- */
 function printVersion(): void {
   console.log(`veto v${VERSION}`);
 }
 
-/**
- * Parse command line arguments.
- */
 function parseArgs(args: string[]): {
   command: string;
   flags: Record<string, boolean>;
+  options: Record<string, string>;
 } {
   const flags: Record<string, boolean> = {};
+  const options: Record<string, string> = {};
   let command = '';
 
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg.startsWith('--')) {
       const flag = arg.slice(2);
-      flags[flag] = true;
+      const next = args[i + 1];
+      if (next && !next.startsWith('-')) {
+        options[flag] = next;
+        i++;
+      } else {
+        flags[flag] = true;
+      }
     } else if (arg.startsWith('-')) {
       const shortFlags = arg.slice(1).split('');
       for (const f of shortFlags) {
@@ -77,29 +87,23 @@ function parseArgs(args: string[]): {
     }
   }
 
-  return { command, flags };
+  return { command, flags, options };
 }
 
-/**
- * Main CLI entry point.
- */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const { command, flags } = parseArgs(args);
+  const { command, flags, options } = parseArgs(args);
 
-  // Handle help flag
   if (flags['help'] || command === 'help') {
     printHelp();
     process.exit(0);
   }
 
-  // Handle version flag or command
   if (flags['version'] || command === 'version') {
     printVersion();
     process.exit(0);
   }
 
-  // Handle commands
   switch (command) {
     case 'init': {
       const result = await init({
@@ -110,8 +114,44 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'keygen': {
+      keygenCommand(options['output']);
+      process.exit(0);
+      break;
+    }
+
+    case 'sign': {
+      const keyPath = options['key'];
+      if (!keyPath) {
+        console.error('Error: --key <path> is required for sign command');
+        process.exit(1);
+      }
+      signCommand({
+        keyPath,
+        inputDir: options['input'],
+        outputFile: options['output'],
+      });
+      process.exit(0);
+      break;
+    }
+
+    case 'verify': {
+      const pubKeyPath = options['key'];
+      const bundlePath = options['bundle'];
+      if (!pubKeyPath) {
+        console.error('Error: --key <path> is required for verify command');
+        process.exit(1);
+      }
+      if (!bundlePath) {
+        console.error('Error: --bundle <path> is required for verify command');
+        process.exit(1);
+      }
+      const valid = verifyCommand({ keyPath: pubKeyPath, bundlePath });
+      process.exit(valid ? 0 : 1);
+      break;
+    }
+
     case '': {
-      // No command provided
       console.log('Veto - AI Agent Tool Call Guardrail');
       console.log('');
       console.log('Run "veto help" for usage information.');
@@ -128,7 +168,6 @@ async function main(): Promise<void> {
   }
 }
 
-// Run the CLI
 main().catch((error) => {
   console.error('Error:', error.message);
   process.exit(1);

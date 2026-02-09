@@ -11,6 +11,9 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import type { Logger } from '../utils/logger.js';
 import type { Rule, RuleSet, LoadedRules } from './types.js';
+import type { SigningConfig } from '../signing/types.js';
+import { SignatureVerificationError } from '../signing/types.js';
+import { readSignedBundle, verifyBundleWithConfig, parseBundlePayload } from '../signing/bundle.js';
 
 /**
  * Options for the rule loader.
@@ -20,6 +23,8 @@ export interface RuleLoaderOptions {
   logger: Logger;
   /** Whether to watch for file changes (future feature) */
   watch?: boolean;
+  /** Signing configuration for verifying signed bundles */
+  signing?: SigningConfig;
 }
 
 /**
@@ -43,6 +48,7 @@ function defaultYamlParser(): never {
  */
 export class RuleLoader {
   private readonly logger: Logger;
+  private readonly signing?: SigningConfig;
   private yamlParser: YamlParser = defaultYamlParser;
   private loadedRules: LoadedRules = {
     ruleSets: [],
@@ -54,6 +60,7 @@ export class RuleLoader {
 
   constructor(options: RuleLoaderOptions) {
     this.logger = options.logger;
+    this.signing = options.signing;
   }
 
   /**
@@ -88,7 +95,26 @@ export class RuleLoader {
     }
 
     const yamlFiles = this.findYamlFiles(dirPath, recursive);
-    this.logger.debug('Found YAML files', { count: yamlFiles.length });
+    const signedFiles = this.findSignedBundleFiles(dirPath, recursive);
+    this.logger.debug('Found rule files', {
+      yamlCount: yamlFiles.length,
+      signedCount: signedFiles.length,
+    });
+
+    for (const filePath of signedFiles) {
+      try {
+        this.loadFromSignedBundle(filePath);
+      } catch (error) {
+        this.logger.error(
+          'Failed to load signed bundle',
+          { path: filePath },
+          error instanceof Error ? error : new Error(String(error))
+        );
+        if (this.signing?.required !== false) {
+          throw error;
+        }
+      }
+    }
 
     for (const filePath of yamlFiles) {
       try {
@@ -156,6 +182,38 @@ export class RuleLoader {
       this.loadedRules.sourceFiles.push(sourceName);
       this.buildIndex();
     }
+  }
+
+  /**
+   * Load rules from a signed bundle file (.signed.json).
+   *
+   * Verifies the bundle signature against configured public keys before loading.
+   * Fails closed if signing is required and verification fails.
+   *
+   * @param filePath - Path to the .signed.json file
+   * @throws SignatureVerificationError if verification fails and signing is required
+   */
+  loadFromSignedBundle(filePath: string): void {
+    this.logger.debug('Loading signed bundle', { path: filePath });
+
+    if (!this.signing?.enabled) {
+      throw new SignatureVerificationError(
+        `Cannot load signed bundle "${filePath}": signing is not enabled in configuration`
+      );
+    }
+
+    const bundle = readSignedBundle(filePath);
+    verifyBundleWithConfig(bundle, this.signing);
+
+    const ruleSet = parseBundlePayload(bundle);
+    this.loadedRules.ruleSets.push(ruleSet);
+    this.loadedRules.sourceFiles.push(filePath);
+    this.logger.info('Loaded verified signed bundle', {
+      name: ruleSet.name,
+      ruleCount: ruleSet.rules.length,
+      keyId: bundle.publicKeyId,
+      path: filePath,
+    });
   }
 
   /**
@@ -228,6 +286,28 @@ export class RuleLoader {
     this.buildIndex();
     this.logger.info('Reloaded rules', { sourceCount: sources.length });
     return this.loadedRules;
+  }
+
+  /**
+   * Find signed bundle files (.signed.json) in a directory.
+   */
+  private findSignedBundleFiles(dirPath: string, recursive: boolean): string[] {
+    const files: string[] = [];
+    if (!existsSync(dirPath)) return files;
+    const entries = readdirSync(dirPath);
+
+    for (const entry of entries) {
+      const fullPath = join(dirPath, entry);
+      const stat = statSync(fullPath);
+
+      if (stat.isDirectory() && recursive) {
+        files.push(...this.findSignedBundleFiles(fullPath, recursive));
+      } else if (stat.isFile() && entry.endsWith('.signed.json')) {
+        files.push(fullPath);
+      }
+    }
+
+    return files;
   }
 
   /**

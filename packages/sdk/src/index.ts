@@ -110,5 +110,13 @@ export type {
   GoogleFunctionCall,
 } from './providers/types.js';
 
+// Signing
+export type { SignedBundle, SigningConfig } from './signing/types.js';
+export {
+  SignatureVerificationError,
+  BundleFormatError,
+  BundlePinError,
+} from './signing/types.js';
+
 // CLI init function (for programmatic use)
 export { init, isInitialized } from './cli/init.js';

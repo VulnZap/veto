@@ -17,6 +17,7 @@ import type { ToolCallHistoryEntry } from '../types/config.js';
 import type { Rule, ToolCallContext, ToolCallHistorySummary } from './types.js';
 import { RuleLoader, type YamlParser } from './loader.js';
 import { ValidationAPIClient, type ValidationAPIConfig } from './api-client.js';
+import type { SigningConfig } from '../signing/types.js';
 
 /**
  * Configuration for the rule-based validator.
@@ -36,6 +37,8 @@ export interface RuleValidatorConfig {
   sessionId?: string;
   /** Agent ID for tracking */
   agentId?: string;
+  /** Signing configuration for verifying signed bundles */
+  signing?: SigningConfig;
 }
 
 /**
@@ -73,7 +76,10 @@ export class RuleValidator {
     this.agentId = options.config.agentId;
 
     // Initialize rule loader
-    this.ruleLoader = new RuleLoader({ logger: this.logger });
+    this.ruleLoader = new RuleLoader({
+      logger: this.logger,
+      signing: options.config.signing,
+    });
 
     // Set YAML parser if provided
     if (this.config.yamlParser) {
