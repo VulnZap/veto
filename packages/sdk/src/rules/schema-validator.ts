@@ -69,11 +69,12 @@ export function validatePolicyIR(data: unknown): void {
       throw new PolicySchemaError(formatErrors(validate.errors));
     }
     // Fail-safe: AJV returned false but no errors array - still reject
+    // Use 'schema' keyword to indicate general schema validation failure
     throw new PolicySchemaError([
       {
         path: '/',
         message: 'Schema validation failed',
-        keyword: 'unknown',
+        keyword: 'schema',
       },
     ]);
   }

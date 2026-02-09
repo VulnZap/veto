@@ -88,3 +88,78 @@ class TestErrorQuality:
         with pytest.raises(PolicySchemaError) as exc_info:
             validate_policy_ir({})
         assert len(exc_info.value.errors) >= 2
+
+
+class TestPathFormatting:
+    """Verify path formatting preserves parent property names for parity with TS SDK."""
+
+    def test_includes_parent_property_names(self) -> None:
+        """Paths should be /rules/0 not /0."""
+        with pytest.raises(PolicySchemaError) as exc_info:
+            validate_policy_ir({
+                "version": "1.0",
+                "rules": [{"name": "missing-required-fields"}],
+            })
+        errors = exc_info.value.errors
+        paths = [e.path for e in errors]
+        # Paths must include 'rules' parent property
+        assert any(p.startswith("/rules/0") for p in paths)
+        # Should not have paths like '/0' without parent
+        import re
+        assert all(not re.match(r"^/\d+$", p) for p in paths)
+
+    def test_nested_condition_paths(self) -> None:
+        """Nested paths should include full hierarchy."""
+        with pytest.raises(PolicySchemaError) as exc_info:
+            validate_policy_ir({
+                "version": "1.0",
+                "rules": [{
+                    "id": "test",
+                    "name": "test",
+                    "action": "block",
+                    "conditions": [{"field": "tool_name", "operator": "BAD_OPERATOR", "value": "x"}],
+                }],
+            })
+        errors = exc_info.value.errors
+        paths = [e.path for e in errors]
+        # Path should include full hierarchy: /rules/0/conditions/0/operator
+        assert any("/rules/0/conditions/0" in p for p in paths)
+
+    def test_root_level_errors_use_slash(self) -> None:
+        """Root-level errors should have path '/'."""
+        with pytest.raises(PolicySchemaError) as exc_info:
+            validate_policy_ir({})
+        errors = exc_info.value.errors
+        # Missing version and rules errors are at root
+        assert any(e.path == "/" for e in errors)
+
+
+class TestFailSafeBehavior:
+    """Verify validator never silently passes invalid data."""
+
+    def test_never_silently_pass_invalid_data(self) -> None:
+        """Various malformed inputs should always raise PolicySchemaError."""
+        malformed_inputs = [
+            None,
+            "string",
+            123,
+            [],
+            {"version": "1.0"},  # missing rules
+            {"rules": []},  # missing version
+            {"version": "2.0", "rules": []},  # wrong version
+        ]
+
+        for input_data in malformed_inputs:
+            with pytest.raises(PolicySchemaError):
+                validate_policy_ir(input_data)
+
+    def test_error_structure_complete(self) -> None:
+        """Each error should have path, message, and keyword."""
+        with pytest.raises(PolicySchemaError) as exc_info:
+            validate_policy_ir({"invalid": "data"})
+        errors = exc_info.value.errors
+        assert len(errors) > 0
+        for err in errors:
+            assert err.path is not None
+            assert err.message is not None
+            assert err.keyword is not None
