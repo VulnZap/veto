@@ -1,0 +1,69 @@
+version: "1.0"
+name: browser-safe-navigation
+description: URL allowlist and domain restrictions for browser navigation
+
+rules:
+  - id: block-data-urls
+    name: Block data URL navigation
+    description: "Prevent navigation to data: URLs which can execute arbitrary code"
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - browser.navigate
+    conditions:
+      - field: arguments.url
+        operator: starts_with
+        value: "data:"
+
+  - id: block-javascript-urls
+    name: Block javascript URL navigation
+    description: "Prevent navigation to javascript: URLs"
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - browser.navigate
+    conditions:
+      - field: arguments.url
+        operator: starts_with
+        value: "javascript:"
+
+  - id: block-file-urls
+    name: Block file URL navigation
+    description: "Prevent navigation to local file: URLs"
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - browser.navigate
+    conditions:
+      - field: arguments.url
+        operator: starts_with
+        value: "file:"
+
+  - id: block-internal-networks
+    name: Block internal network navigation
+    description: Prevent navigation to internal/private network addresses
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - browser.navigate
+    conditions:
+      - field: arguments.url
+        operator: matches
+        value: "https?://(localhost|127\\.0\\.0\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]+\\.[0-9]+|192\\.168\\.[0-9]+\\.[0-9]+)"
+
+  - id: block-known-phishing-tlds
+    name: Block known phishing TLDs
+    description: Block navigation to commonly abused top-level domains
+    enabled: true
+    severity: medium
+    action: block
+    tools:
+      - browser.navigate
+    conditions:
+      - field: arguments.url
+        operator: matches
+        value: "https?://[^/]+\\.(zip|mov|xyz|top|gq|ml|cf|tk|buzz|cam)(/|$)"

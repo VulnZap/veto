@@ -28,7 +28,11 @@
     "llm",
     "openai",
     "anthropic",
-    "gemini"
+    "gemini",
+    "browser-use",
+    "playwright",
+    "puppeteer",
+    "browser-agent"
   ],
   "author": "",
   "license": "MIT",
@@ -65,6 +69,7 @@
   },
   "files": [
     "dist",
+    "templates",
     "README.md"
   ],
   "exports": {
@@ -99,6 +104,22 @@
     "./benchmark": {
       "types": "./dist/benchmark/index.d.ts",
       "import": "./dist/benchmark/index.js"
+    },
+    "./integrations": {
+      "types": "./dist/integrations/index.d.ts",
+      "import": "./dist/integrations/index.js"
+    },
+    "./integrations/browser-use": {
+      "types": "./dist/integrations/browser-use.d.ts",
+      "import": "./dist/integrations/browser-use.js"
+    },
+    "./integrations/playwright": {
+      "types": "./dist/integrations/playwright.d.ts",
+      "import": "./dist/integrations/playwright.js"
+    },
+    "./integrations/puppeteer": {
+      "types": "./dist/integrations/puppeteer.d.ts",
+      "import": "./dist/integrations/puppeteer.js"
     }
   },
   "dependencies": {

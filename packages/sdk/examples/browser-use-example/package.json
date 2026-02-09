@@ -1,0 +1,14 @@
+{
+  "name": "browser-use-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx browser_agent.ts"
+  },
+  "dependencies": {
+    "veto-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0"
+  }
+}

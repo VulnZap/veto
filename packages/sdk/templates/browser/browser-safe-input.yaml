@@ -1,0 +1,79 @@
+version: "1.0"
+name: browser-safe-input
+description: Restrict form filling to non-sensitive fields
+
+rules:
+  - id: block-password-fill
+    name: Block password field filling
+    description: Prevent automated filling of password fields
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - browser.fill
+      - browser.type
+      - browser.input
+    conditions:
+      - field: arguments.selector
+        operator: matches
+        value: "(type=['\"]?password|\\[type=password\\]|#password|input\\.password|name=['\"]?pass)"
+
+  - id: block-credit-card-fill
+    name: Block credit card field filling
+    description: Prevent automated filling of credit card number fields
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - browser.fill
+      - browser.type
+      - browser.input
+    conditions:
+      - field: arguments.selector
+        operator: matches
+        value: "(card.?number|cc.?num|credit.?card|\\[name=['\"]?card)"
+
+  - id: block-ssn-fill
+    name: Block SSN field filling
+    description: Prevent automated filling of social security number fields
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - browser.fill
+      - browser.type
+      - browser.input
+    conditions:
+      - field: arguments.selector
+        operator: matches
+        value: "(ssn|social.?security|\\[name=['\"]?ssn)"
+
+  - id: block-sensitive-value-patterns
+    name: Block sensitive value patterns
+    description: Prevent filling values that look like credit card numbers or SSNs
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - browser.fill
+      - browser.type
+      - browser.input
+    conditions:
+      - field: arguments.value
+        operator: matches
+        value: "^[0-9]{3}-[0-9]{2}-[0-9]{4}$"
+
+  - id: block-credit-card-value
+    name: Block credit card number values
+    description: Prevent filling values that match credit card number patterns
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - browser.fill
+      - browser.type
+      - browser.input
+    conditions:
+      - field: arguments.value
+        operator: matches
+        value: "^[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}$"

@@ -1,0 +1,69 @@
+version: "1.0"
+name: browser-safe-downloads
+description: Restrict file download types and sources
+
+rules:
+  - id: block-executable-downloads
+    name: Block executable file downloads
+    description: Prevent downloading executable files
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - browser.download
+    conditions:
+      - field: arguments.url
+        operator: matches
+        value: "\\.(exe|msi|bat|cmd|com|scr|pif|vbs|vbe|js|jse|wsf|wsh|ps1|sh|bash|csh)$"
+
+  - id: block-archive-downloads
+    name: Block suspicious archive downloads
+    description: Prevent downloading archive files that may contain malware
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - browser.download
+    conditions:
+      - field: arguments.url
+        operator: matches
+        value: "\\.(iso|img|dmg|cab|dll|sys|drv)$"
+
+  - id: block-data-url-downloads
+    name: Block data URL downloads
+    description: "Prevent downloads from data: URLs"
+    enabled: true
+    severity: critical
+    action: block
+    tools:
+      - browser.download
+    conditions:
+      - field: arguments.url
+        operator: starts_with
+        value: "data:"
+
+  - id: block-blob-url-downloads
+    name: Block blob URL downloads
+    description: "Prevent downloads from blob: URLs"
+    enabled: true
+    severity: high
+    action: block
+    tools:
+      - browser.download
+    conditions:
+      - field: arguments.url
+        operator: starts_with
+        value: "blob:"
+
+  - id: allow-safe-document-downloads
+    name: Allow safe document downloads
+    description: Allow downloading common document formats
+    enabled: true
+    severity: low
+    action: allow
+    tools:
+      - browser.download
+    conditions:
+      - field: arguments.url
+        operator: matches
+        value: "\\.(pdf|doc|docx|xls|xlsx|csv|txt|json|xml|html|css|png|jpg|jpeg|gif|svg|webp)$"
