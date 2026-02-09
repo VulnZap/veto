@@ -128,6 +128,9 @@ export class ValidationAPIClient {
       return this.getFailModeResponse('Circuit breaker is open');
     }
 
+    // Mark that we're starting an attempt (enforces halfOpenMaxAttempts in half-open state)
+    this.circuitBreaker.beginAttempt();
+
     try {
       const result = await withRetry(
         () => this.makeRequest(url, request),

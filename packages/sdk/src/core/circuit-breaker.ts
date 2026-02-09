@@ -15,6 +15,7 @@ export interface CircuitBreakerMetrics {
   lastFailureTime: number | null;
   lastStateChange: number;
   totalTrips: number;
+  halfOpenAttempts: number;
 }
 
 export const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig = {
@@ -65,6 +66,7 @@ export class CircuitBreaker {
       lastFailureTime: this.lastFailureTime,
       lastStateChange: this.lastStateChange,
       totalTrips: this.totalTrips,
+      halfOpenAttempts: this.halfOpenAttempts,
     };
   }
 
@@ -75,6 +77,21 @@ export class CircuitBreaker {
       return this.halfOpenAttempts < this.config.halfOpenMaxAttempts;
     }
     return false;
+  }
+
+  /**
+   * Mark that an attempt is starting in half-open state.
+   * Call this after canExecute() returns true and before starting the request.
+   * This enforces the halfOpenMaxAttempts limit for concurrency safety.
+   */
+  beginAttempt(): void {
+    if (this.state === 'half-open') {
+      this.halfOpenAttempts++;
+      this.logger.debug('Half-open probe attempt started', {
+        halfOpenAttempts: this.halfOpenAttempts,
+        halfOpenMaxAttempts: this.config.halfOpenMaxAttempts,
+      });
+    }
   }
 
   recordSuccess(): void {
