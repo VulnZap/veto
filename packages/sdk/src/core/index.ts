@@ -23,3 +23,18 @@ export {
   type InterceptorOptions,
   type InterceptionResult,
 } from './interceptor.js';
+export {
+  CircuitBreaker,
+  type CircuitBreakerConfig,
+  type CircuitBreakerMetrics,
+  type CircuitState,
+  DEFAULT_CIRCUIT_BREAKER_CONFIG,
+} from './circuit-breaker.js';
+export {
+  withRetry,
+  isRetriable,
+  computeDelay,
+  type RetryConfig,
+  type RetryResult,
+  DEFAULT_RETRY_CONFIG,
+} from './retry.js';

@@ -62,6 +62,7 @@ export type {
   Validator,
   NamedValidator,
   ToolCallHistoryEntry,
+  ResilienceConfig,
 } from './types/config.js';
 
 // Rule types

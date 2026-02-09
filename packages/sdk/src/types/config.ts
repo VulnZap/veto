@@ -195,6 +195,34 @@ export interface ResolvedVetoConfig extends Required<Omit<VetoConfig, 'logger' |
 }
 
 /**
+ * Resilience configuration for API validation calls.
+ */
+export interface ResilienceConfig {
+  /** Request deadline in milliseconds. Default: 5000 */
+  deadlineMs?: number;
+  /** Behavior when all retries and circuit breaker are exhausted.
+   *  'fail-closed' blocks the tool call (safe default for prod).
+   *  'fail-open' allows the tool call through. */
+  failMode?: 'fail-closed' | 'fail-open';
+  retry?: {
+    /** Max number of attempts (including initial). Default: 3 */
+    maxAttempts?: number;
+    /** Base delay for exponential backoff in ms. Default: 200 */
+    baseDelayMs?: number;
+    /** Maximum delay cap in ms. Default: 5000 */
+    maxDelayMs?: number;
+  };
+  circuitBreaker?: {
+    /** Consecutive failures to trip the breaker. Default: 5 */
+    failureThreshold?: number;
+    /** Time in ms before attempting half-open probe. Default: 30000 */
+    resetTimeoutMs?: number;
+    /** Max requests allowed in half-open state. Default: 1 */
+    halfOpenMaxAttempts?: number;
+  };
+}
+
+/**
  * Helper to check if a validator is a named validator.
  */
 export function isNamedValidator(

@@ -20,6 +20,7 @@ import type {
   ValidationContext,
   ValidationResult,
   LogLevel,
+  ResilienceConfig,
 } from '../types/config.js';
 import { createLogger, type Logger } from '../utils/logger.js';
 import { generateToolCallId } from '../utils/id.js';
@@ -37,6 +38,7 @@ import type { KernelConfig, KernelToolCall } from '../kernel/types.js';
 import { KernelClient } from '../kernel/client.js';
 import type { CustomConfig, CustomToolCall, CustomResponse } from '../custom/types.js';
 import { CustomClient } from '../custom/client.js';
+import { ValidationAPIClient } from '../rules/api-client.js';
 
 /**
  * Veto operating mode.
@@ -99,6 +101,20 @@ interface VetoConfigFile {
     maxTokens?: number;
     timeout?: number;
     baseUrl?: string;
+  };
+  resilience?: {
+    deadlineMs?: number;
+    failMode?: 'fail-closed' | 'fail-open';
+    retry?: {
+      maxAttempts?: number;
+      baseDelayMs?: number;
+      maxDelayMs?: number;
+    };
+    circuitBreaker?: {
+      failureThreshold?: number;
+      resetTimeoutMs?: number;
+      halfOpenMaxAttempts?: number;
+    };
   };
   logging?: {
     level?: LogLevel;
@@ -197,8 +213,6 @@ export class Veto {
   private readonly apiBaseUrl: string;
   private readonly apiEndpoint: string;
   private readonly apiTimeout: number;
-  private readonly apiRetries: number;
-  private readonly apiRetryDelay: number;
   private readonly sessionId?: string;
   private readonly agentId?: string;
 
@@ -206,9 +220,15 @@ export class Veto {
   private kernelClient: KernelClient | null = null;
   private readonly kernelConfig: KernelConfig | null;
 
+  // Validation API client (lazy initialized for api mode)
+  private validationClient: ValidationAPIClient | null = null;
+
   // Custom provider client (lazy initialized)
   private customClient: CustomClient | null = null;
   private readonly customConfig: CustomConfig | null;
+
+  // Resilience
+  private readonly resilienceConfig: ResilienceConfig;
 
   // Loaded rules
   private readonly rules: LoadedRulesState;
@@ -232,9 +252,7 @@ export class Veto {
     // Resolve API configuration from config file
     this.apiBaseUrl = (config.api?.baseUrl ?? 'http://localhost:8080').replace(/\/$/, '');
     this.apiEndpoint = config.api?.endpoint ?? '/tool/call/check';
-    this.apiTimeout = config.api?.timeout ?? 10000;
-    this.apiRetries = config.api?.retries ?? 2;
-    this.apiRetryDelay = config.api?.retryDelay ?? 1000;
+    this.apiTimeout = config.api?.timeout ?? 5000;
 
     // Resolve kernel configuration
     if (this.validationMode === 'kernel' && config.kernel?.model) {
@@ -268,6 +286,9 @@ export class Veto {
     } else {
       this.customConfig = null;
     }
+
+    // Resolve resilience configuration
+    this.resilienceConfig = config.resilience ?? {};
 
     // Resolve tracking options
     this.sessionId = options.sessionId ?? process.env.VETO_SESSION_ID;
@@ -497,18 +518,37 @@ export class Veto {
   }
 
   /**
+   * Get or create the validation API client.
+   */
+  private getValidationClient(): ValidationAPIClient {
+    if (this.validationClient) {
+      return this.validationClient;
+    }
+
+    this.validationClient = new ValidationAPIClient({
+      config: {
+        baseUrl: this.apiBaseUrl,
+        endpoint: this.apiEndpoint,
+        timeout: this.apiTimeout,
+      },
+      logger: this.logger,
+      resilience: this.resilienceConfig,
+    });
+
+    return this.validationClient;
+  }
+
+  /**
    * Validate a tool call with the external API.
    */
   private async validateWithAPI(context: ValidationContext): Promise<ValidationResult> {
     const rules = this.getRulesForTool(context.toolName);
 
-    // If no rules, allow by default
     if (rules.length === 0) {
       this.logger.debug('No rules for tool, allowing', { tool: context.toolName });
       return { decision: 'allow' };
     }
 
-    // Build API request
     const apiContext: ToolCallContext = {
       call_id: context.callId,
       tool_name: context.toolName,
@@ -520,73 +560,9 @@ export class Veto {
       custom: context.custom,
     };
 
-    const url = `${this.apiBaseUrl}${this.apiEndpoint}`;
-
-    // Make API call with retries
-    let lastError: Error | undefined;
-
-    for (let attempt = 0; attempt <= this.apiRetries; attempt++) {
-      try {
-        const response = await this.makeAPIRequest(url, apiContext, rules);
-        return this.handleAPIResponse(response, context);
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        if (attempt < this.apiRetries) {
-          this.logger.warn('API request failed, retrying', {
-            attempt: attempt + 1,
-            error: lastError.message,
-          });
-          await this.delay(this.apiRetryDelay);
-        }
-      }
-    }
-
-    // All retries failed - use fail mode
-    return this.handleAPIFailure(lastError?.message ?? 'API unavailable');
-  }
-
-  /**
-   * Make the API request.
-   */
-  private async makeAPIRequest(
-    url: string,
-    context: ToolCallContext,
-    rules: Rule[]
-  ): Promise<ValidationAPIResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.apiTimeout);
-
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ context, rules }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`API returned status ${response.status}`);
-      }
-
-      const data = await response.json() as ValidationAPIResponse;
-
-      // Validate response
-      if (data.decision !== 'pass' && data.decision !== 'block') {
-        throw new Error('Invalid API response: missing decision');
-      }
-
-      return data;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
+    const client = this.getValidationClient();
+    const response = await client.validate(apiContext, rules);
+    return this.handleAPIResponse(response, context);
   }
 
   /**
@@ -645,26 +621,6 @@ export class Veto {
     }
   }
 
-  /**
-   * Handle API failure. In log mode, always allow. In strict mode, block.
-   */
-  private handleAPIFailure(reason: string): ValidationResult {
-    if (this.mode === 'log') {
-      this.logger.warn('API unavailable (log mode, allowing)', { reason });
-      return {
-        decision: 'allow',
-        reason: `API unavailable: ${reason}`,
-        metadata: { api_error: true },
-      };
-    } else {
-      this.logger.error('API unavailable (strict mode, blocking)', { reason });
-      return {
-        decision: 'deny',
-        reason: `API unavailable: ${reason}`,
-        metadata: { api_error: true },
-      };
-    }
-  }
 
   /**
    * Get or create the kernel client.
@@ -932,14 +888,6 @@ export class Veto {
   }
 
   /**
-   * Delay helper.
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-
-  /**
    * Wrap tools with Veto validation (provider-agnostic).
    *
    * This method accepts tools of any type and returns them with the same type,
@@ -983,6 +931,7 @@ export class Veto {
   wrapTool<T extends { name: string }>(tool: T): T {
     const toolName = tool.name;
     const toolAny = tool as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const veto = this;
 
     // For LangChain tools, we need to wrap the 'func' property
