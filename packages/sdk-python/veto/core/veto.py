@@ -251,6 +251,10 @@ class Veto:
                                 param_type = any_type.get("type", "string")
                                 break
 
+                    # Normalize JSON Schema "integer" to "number"
+                    if param_type == "integer":
+                        param_type = "number"
+
                     parameters.append(
                         ToolParameter(
                             name=prop_name,
@@ -274,10 +278,13 @@ class Veto:
                 required = input_schema.get("required", [])
 
                 for prop_name, prop_info in props.items():
+                    p_type = prop_info.get("type", "string")
+                    if p_type == "integer":
+                        p_type = "number"
                     parameters.append(
                         ToolParameter(
                             name=prop_name,
-                            type=prop_info.get("type", "string"),
+                            type=p_type,
                             description=prop_info.get("description"),
                             required=prop_name in required,
                             enum=prop_info.get("enum"),
@@ -301,7 +308,7 @@ class Veto:
                         if param.annotation != inspect.Parameter.empty:
                             ann = param.annotation
                             if ann is int:
-                                param_type = "integer"
+                                param_type = "number"
                             elif ann is float:
                                 param_type = "number"
                             elif ann is bool:
@@ -393,6 +400,47 @@ class Veto:
             ]
         if response.metadata:
             metadata.update(response.metadata)
+
+        if response.decision == "require_approval" and response.approval_id:
+            self._logger.info(
+                "Awaiting human approval",
+                {"tool": context.tool_name, "approval_id": response.approval_id},
+            )
+            try:
+                approval_data = await self._cloud_client.poll_approval(
+                    response.approval_id
+                )
+                approval_status = approval_data.get("status", "denied")
+                if approval_status == "approved":
+                    self._logger.info(
+                        "Approval granted",
+                        {"tool": context.tool_name, "approval_id": response.approval_id},
+                    )
+                    return ValidationResult(
+                        decision="allow",
+                        reason=f"Approved by human: {approval_data.get('resolvedBy', 'unknown')}",
+                        metadata=metadata if metadata else None,
+                    )
+                else:
+                    self._logger.warn(
+                        "Approval denied or expired",
+                        {"tool": context.tool_name, "status": approval_status},
+                    )
+                    return ValidationResult(
+                        decision="deny",
+                        reason=f"Approval {approval_status}: {response.reason}",
+                        metadata=metadata if metadata else None,
+                    )
+            except TimeoutError:
+                self._logger.warn(
+                    "Approval timed out",
+                    {"tool": context.tool_name, "approval_id": response.approval_id},
+                )
+                return ValidationResult(
+                    decision="deny",
+                    reason="Approval timed out waiting for human review",
+                    metadata=metadata if metadata else None,
+                )
 
         if response.decision == "allow":
             self._logger.debug(
@@ -537,12 +585,18 @@ class Veto:
                     async def wrapped_ainvoke(
                         input_data: dict[str, Any], *args: Any, **kwargs: Any
                     ) -> Any:
+                        # LangGraph passes a ToolCall dict with args nested
+                        if isinstance(input_data, dict) and "args" in input_data and "name" in input_data:
+                            call_arguments = input_data["args"]
+                        else:
+                            call_arguments = input_data
+
                         # Validate with Veto first
                         result = await veto._validate_tool_call(
                             ToolCall(
                                 id=generate_tool_call_id(),
                                 name=tool_name,
-                                arguments=input_data,
+                                arguments=call_arguments,
                             )
                         )
 
@@ -553,9 +607,8 @@ class Veto:
                                 result.validation_result,
                             )
 
-                        # Call original ainvoke with potentially modified arguments
-                        final_args = result.final_arguments or input_data
-                        return await original_ainvoke(final_args, *args, **kwargs)
+                        # Call original ainvoke with the original input format
+                        return await original_ainvoke(input_data, *args, **kwargs)
 
                     object.__setattr__(wrapped, "ainvoke", wrapped_ainvoke)
 

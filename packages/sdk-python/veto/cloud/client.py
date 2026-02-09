@@ -299,6 +299,7 @@ class VetoCloudClient:
                             reason=data.get("reason"),
                             failed_constraints=failed_constraints,
                             metadata=data.get("metadata"),
+                            approval_id=data.get("approval_id"),
                         )
 
             except Exception as error:
@@ -325,6 +326,73 @@ class VetoCloudClient:
             failed_constraints=[],
             metadata={"api_error": True},
         )
+
+    async def poll_approval(
+        self,
+        approval_id: str,
+        poll_interval: float = 2.0,
+        timeout: float = 300.0,
+    ) -> dict[str, Any]:
+        """
+        Poll an approval record until it is resolved or times out.
+
+        Args:
+            approval_id: The approval ID to poll
+            poll_interval: Seconds between poll requests
+            timeout: Maximum seconds to wait before raising TimeoutError
+
+        Returns:
+            The resolved approval data dict
+
+        Raises:
+            TimeoutError: If the approval is not resolved within the timeout
+        """
+        url = f"{self._base_url}/v1/approvals/{approval_id}"
+        deadline = asyncio.get_event_loop().time() + timeout
+
+        self._log_info(
+            "Polling for approval resolution",
+            {"approval_id": approval_id, "timeout": timeout},
+        )
+
+        while True:
+            try:
+                request_timeout = aiohttp.ClientTimeout(
+                    total=self._config.timeout / 1000
+                )
+                async with aiohttp.ClientSession(timeout=request_timeout) as session:
+                    async with session.get(
+                        url, headers=self._get_headers()
+                    ) as response:
+                        if not response.ok:
+                            error_text = await response.text()
+                            self._log_warn(
+                                "Approval poll request failed",
+                                {"status": response.status, "error": error_text},
+                            )
+                        else:
+                            data: dict[str, Any] = await response.json()
+                            status = data.get("status", "pending")
+
+                            if status != "pending":
+                                self._log_info(
+                                    "Approval resolved",
+                                    {"approval_id": approval_id, "status": status},
+                                )
+                                return data
+
+            except Exception as error:
+                self._log_warn(
+                    "Approval poll error",
+                    {"approval_id": approval_id, "error": str(error)},
+                )
+
+            if asyncio.get_event_loop().time() >= deadline:
+                raise TimeoutError(
+                    f"Approval {approval_id} was not resolved within {timeout}s"
+                )
+
+            await asyncio.sleep(poll_interval)
 
     def is_tool_registered(self, tool_name: str) -> bool:
         """Check if a tool has been registered with the cloud."""

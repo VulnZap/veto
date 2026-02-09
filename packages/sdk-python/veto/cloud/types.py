@@ -70,8 +70,9 @@ class FailedConstraint:
 class ValidationResponse:
     """Response from tool call validation."""
 
-    decision: Literal["allow", "deny"]
+    decision: Literal["allow", "deny", "require_approval"]
     reason: Optional[str] = None
     failed_constraints: list[FailedConstraint] = field(default_factory=list)
     # Metadata from cloud (can include LLM reasoning if exceptions were evaluated)
     metadata: Optional[dict[str, Any]] = None
+    approval_id: Optional[str] = None
