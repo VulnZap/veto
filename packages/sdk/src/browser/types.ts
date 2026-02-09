@@ -33,7 +33,9 @@ export type HidingMethod =
   | 'zero-size'
   | 'clip-hidden'
   | 'text-indent'
-  | 'overflow-hidden-zero-size';
+  | 'overflow-hidden-zero-size'
+  | 'aria-hidden'
+  | 'hidden-attribute';
 
 /**
  * A single audit entry recording a detection and the action taken.

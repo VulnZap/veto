@@ -166,16 +166,36 @@ describe('BrowserSanitizer', () => {
       expect(matches[0].hidingMethod).toBe('text-indent');
     });
 
-    it('detects aria-hidden', () => {
+    it('detects aria-hidden with correct method type', () => {
       const s = createSanitizer();
       const matches = s.detectHiddenElements(HIDDEN_ARIA);
       expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('aria-hidden');
     });
 
-    it('detects hidden attribute', () => {
+    it('detects hidden attribute with correct method type', () => {
       const s = createSanitizer();
       const matches = s.detectHiddenElements(HIDDEN_ATTR);
       expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('hidden-attribute');
+    });
+
+    it('detects aria-hidden with other attributes', () => {
+      const s = createSanitizer();
+      const html = `<span class="icon" aria-hidden="true" data-testid="icon">Hidden icon text</span>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('aria-hidden');
+      expect(matches[0].textContent).toBe('Hidden icon text');
+    });
+
+    it('detects hidden attribute with other attributes', () => {
+      const s = createSanitizer();
+      const html = `<div class="modal" hidden data-state="closed">Modal content</div>`;
+      const matches = s.detectHiddenElements(html);
+      expect(matches.length).toBe(1);
+      expect(matches[0].hidingMethod).toBe('hidden-attribute');
+      expect(matches[0].textContent).toBe('Modal content');
     });
   });
 
@@ -282,6 +302,20 @@ describe('BrowserSanitizer', () => {
       expect(result.sanitized).not.toContain('reveal all secrets');
       expect(result.sanitized).not.toContain('BEGIN HIDDEN INSTRUCTIONS');
       expect(result.sanitized).toContain('Legitimate content here');
+      expect(result.modified).toBe(true);
+    });
+
+    it('strips aria-hidden elements', () => {
+      const s = createSanitizer('strict');
+      const result = s.sanitize(HIDDEN_ARIA);
+      expect(result.sanitized).not.toContain('Jailbreak');
+      expect(result.modified).toBe(true);
+    });
+
+    it('strips hidden attribute elements', () => {
+      const s = createSanitizer('strict');
+      const result = s.sanitize(HIDDEN_ATTR);
+      expect(result.sanitized).not.toContain('Override your constraints');
       expect(result.modified).toBe(true);
     });
   });
@@ -406,11 +440,23 @@ describe('BrowserSanitizer', () => {
 
     it('counts suspiciousPatternCount using structured flags', () => {
       const s = createSanitizer('strict');
-      // This has 1 suspicious comment and 2 suspicious hidden elements
       const result = s.sanitize(MIXED_INJECTION);
-      // Verify suspiciousPatternCount matches entries with isSuspicious=true
       const suspiciousEntries = result.report.entries.filter((e) => e.isSuspicious);
       expect(result.report.suspiciousPatternCount).toBe(suspiciousEntries.length);
+    });
+
+    it('reports correct hidingMethod in description for aria-hidden', () => {
+      const s = createSanitizer('strict');
+      const result = s.sanitize(HIDDEN_ARIA);
+      const entry = result.report.entries.find((e) => e.category === 'hidden-element');
+      expect(entry?.description).toContain('aria-hidden');
+    });
+
+    it('reports correct hidingMethod in description for hidden-attribute', () => {
+      const s = createSanitizer('strict');
+      const result = s.sanitize(HIDDEN_ATTR);
+      const entry = result.report.entries.find((e) => e.category === 'hidden-element');
+      expect(entry?.description).toContain('hidden-attribute');
     });
   });
 
@@ -455,7 +501,6 @@ describe('BrowserSanitizer', () => {
     });
 
     it('removes all occurrences of duplicate hidden elements', () => {
-      // Test for the global replacement fix
       const duplicateHtml = `<div style="display:none">SECRET</div><p>middle</p><div style="display:none">SECRET</div>`;
       const s = createSanitizer('strict');
       const result = s.sanitize(duplicateHtml);
@@ -472,15 +517,36 @@ describe('BrowserSanitizer', () => {
     });
 
     it('handles pathological input for stripHtmlTags without hanging', () => {
-      // Test ReDoS guard - create input that could cause polynomial regex time
       const pathologicalInput = `<div style="display:none">${'<'.repeat(10000)}some text</div>`;
       const s = createSanitizer('strict');
       const start = Date.now();
       const result = s.sanitize(pathologicalInput);
       const elapsed = Date.now() - start;
-      // Should complete in reasonable time (under 5 seconds)
       expect(elapsed).toBeLessThan(5000);
       expect(result.modified).toBe(true);
+    });
+
+    it('handles bounded regex patterns within limit', () => {
+      const longAttributes = 'data-x="y" '.repeat(50); // ~550 chars, within 1000 bound
+      const html = `<div ${longAttributes}style="display:none">Hidden</div>`;
+      const s = createSanitizer('strict');
+      const start = Date.now();
+      const result = s.sanitize(html);
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeLessThan(2000);
+      expect(result.modified).toBe(true);
+    });
+
+    it('gracefully handles attributes exceeding bound limit', () => {
+      // Attributes exceeding 1000 char bound won't match - intentional ReDoS protection
+      const veryLongAttributes = 'data-x="y" '.repeat(200); // ~2200 chars, exceeds 1000 bound
+      const html = `<div ${veryLongAttributes}style="display:none">Hidden</div>`;
+      const s = createSanitizer('strict');
+      const start = Date.now();
+      const result = s.sanitize(html);
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeLessThan(1000);
+      expect(result.report.hiddenElementCount).toBe(0);
     });
   });
 
@@ -529,6 +595,57 @@ describe('BrowserSanitizer', () => {
       const html = `<div style="opacity:10">Invalid but not zero</div>`;
       const matches = s.detectHiddenElements(html);
       expect(matches.length).toBe(0);
+    });
+  });
+
+  describe('hiding method types', () => {
+    it('uses aria-hidden method type (not display-none)', () => {
+      const s = createSanitizer();
+      const matches = s.detectHiddenElements(HIDDEN_ARIA);
+      expect(matches[0].hidingMethod).not.toBe('display-none');
+      expect(matches[0].hidingMethod).toBe('aria-hidden');
+    });
+
+    it('uses hidden-attribute method type (not display-none)', () => {
+      const s = createSanitizer();
+      const matches = s.detectHiddenElements(HIDDEN_ATTR);
+      expect(matches[0].hidingMethod).not.toBe('display-none');
+      expect(matches[0].hidingMethod).toBe('hidden-attribute');
+    });
+
+    it('all hiding methods are from the HidingMethod union', () => {
+      const validMethods = [
+        'display-none',
+        'visibility-hidden',
+        'opacity-zero',
+        'offscreen-position',
+        'zero-size',
+        'clip-hidden',
+        'text-indent',
+        'overflow-hidden-zero-size',
+        'aria-hidden',
+        'hidden-attribute',
+      ];
+
+      const s = createSanitizer();
+      const allTestCases = [
+        HIDDEN_DISPLAY_NONE,
+        HIDDEN_VISIBILITY,
+        HIDDEN_OPACITY,
+        HIDDEN_OFFSCREEN,
+        HIDDEN_ZERO_SIZE,
+        HIDDEN_CLIP,
+        HIDDEN_TEXT_INDENT,
+        HIDDEN_ARIA,
+        HIDDEN_ATTR,
+      ];
+
+      for (const html of allTestCases) {
+        const matches = s.detectHiddenElements(html);
+        if (matches.length > 0) {
+          expect(validMethods).toContain(matches[0].hidingMethod);
+        }
+      }
     });
   });
 });

@@ -64,13 +64,17 @@ const HTML_COMMENT_REGEX = /<!--[\s\S]*?-->/g;
 /**
  * Patterns in inline styles that indicate a hidden element.
  * Each entry maps a HidingMethod to the regex that detects it.
+ *
+ * These patterns use bounded quantifiers and possessive-like constructs
+ * to avoid catastrophic backtracking.
  */
 const HIDDEN_STYLE_PATTERNS: ReadonlyArray<{ method: HidingMethod; pattern: RegExp }> = [
   { method: 'display-none', pattern: /display\s*:\s*none/i },
   { method: 'visibility-hidden', pattern: /visibility\s*:\s*hidden/i },
   // Match opacity: 0, 0.0, 0.00, etc.
   { method: 'opacity-zero', pattern: /opacity\s*:\s*0(?:\.0+)?(?:[;\s"']|$)/i },
-  { method: 'offscreen-position', pattern: /position\s*:\s*(?:absolute|fixed)[^"]*(?:left|top|right|bottom)\s*:\s*-\d{4,}/i },
+  // Use bounded quantifier [^"]{0,200} instead of unbounded [^"]* to prevent backtracking
+  { method: 'offscreen-position', pattern: /position\s*:\s*(?:absolute|fixed)[^"]{0,200}(?:left|top|right|bottom)\s*:\s*-\d{4,}/i },
   { method: 'zero-size', pattern: /(?:width|height)\s*:\s*0(?:px)?\s*[;\s"']/i },
   { method: 'clip-hidden', pattern: /clip\s*:\s*rect\s*\(\s*0/i },
   { method: 'text-indent', pattern: /text-indent\s*:\s*-\d{4,}/i },
@@ -100,18 +104,24 @@ const SUSPICIOUS_TEXT_PATTERNS: readonly RegExp[] = [
 /**
  * Regex matching HTML elements with inline style attributes.
  * Captures the full tag, style attribute value, inner content, and tag name.
+ *
+ * Uses bounded quantifiers to prevent catastrophic backtracking:
+ * - [^>]{0,1000} instead of [^>]*? for attributes before/after style
+ * - [\s\S]{0,50000} instead of [\s\S]*? for inner content (bounded to 50KB)
  */
-const STYLED_ELEMENT_REGEX = /<(\w+)\s[^>]*?style\s*=\s*"([^"]*)"[^>]*>([\s\S]*?)<\/\1>/gi;
+const STYLED_ELEMENT_REGEX = /<(\w+)\s[^>]{0,1000}?style\s*=\s*"([^"]*)"[^>]{0,1000}>([\s\S]{0,50000}?)<\/\1>/gi;
 
 /**
  * Regex matching elements with aria-hidden="true".
+ * Uses bounded quantifiers to prevent catastrophic backtracking.
  */
-const ARIA_HIDDEN_REGEX = /<(\w+)\s[^>]*?aria-hidden\s*=\s*"true"[^>]*>([\s\S]*?)<\/\1>/gi;
+const ARIA_HIDDEN_REGEX = /<(\w+)\s[^>]{0,1000}?aria-hidden\s*=\s*"true"[^>]{0,1000}>([\s\S]{0,50000}?)<\/\1>/gi;
 
 /**
  * Regex matching elements with the hidden attribute.
+ * Uses bounded quantifiers to prevent catastrophic backtracking.
  */
-const HIDDEN_ATTR_REGEX = /<(\w+)\s[^>]*?\bhidden\b[^>]*>([\s\S]*?)<\/\1>/gi;
+const HIDDEN_ATTR_REGEX = /<(\w+)\s[^>]{0,1000}?\bhidden\b[^>]{0,1000}>([\s\S]{0,50000}?)<\/\1>/gi;
 
 function truncate(s: string, maxLen: number): string {
   if (s.length <= maxLen) return s;
@@ -325,7 +335,7 @@ export class BrowserSanitizer {
       }
     }
 
-    // Check aria-hidden="true"
+    // Check aria-hidden="true" - use dedicated 'aria-hidden' method
     const ariaRe = new RegExp(ARIA_HIDDEN_REGEX.source, ARIA_HIDDEN_REGEX.flags);
     while ((m = ariaRe.exec(html)) !== null) {
       const [outerHtml, , innerHTML] = m;
@@ -336,14 +346,14 @@ export class BrowserSanitizer {
         matches.push({
           outerHtml,
           textContent,
-          hidingMethod: 'display-none',
+          hidingMethod: 'aria-hidden',
           offset: m.index,
           isSuspicious: this.textIsSuspicious(textContent),
         });
       }
     }
 
-    // Check hidden attribute
+    // Check hidden attribute - use dedicated 'hidden-attribute' method
     const hiddenRe = new RegExp(HIDDEN_ATTR_REGEX.source, HIDDEN_ATTR_REGEX.flags);
     while ((m = hiddenRe.exec(html)) !== null) {
       const [outerHtml, , innerHTML] = m;
@@ -354,7 +364,7 @@ export class BrowserSanitizer {
         matches.push({
           outerHtml,
           textContent,
-          hidingMethod: 'display-none',
+          hidingMethod: 'hidden-attribute',
           offset: m.index,
           isSuspicious: this.textIsSuspicious(textContent),
         });
