@@ -19,8 +19,12 @@ TEST_OUTPUT=$(pnpm test 2>&1) || TEST_EXIT_CODE=$?
 if [ "$TEST_EXIT_CODE" -ne 0 ]; then
   echo "⚠️  Tests exited with code $TEST_EXIT_CODE"
 fi
-TESTS_PASSED=$(echo "$TEST_OUTPUT" | grep "^.*Tests " | grep -oE '[0-9]+ passed' || echo "0 passed")
-TEST_FILES=$(echo "$TEST_OUTPUT" | grep "Test Files" | grep -oE '[0-9]+ passed' || echo "0 passed")
+# Strip ANSI codes for reliable parsing
+CLEAN_OUTPUT=$(echo "$TEST_OUTPUT" | sed 's/\x1b\[[0-9;]*m//g')
+# Parse "Tests  118 passed" pattern (handles turbo prefix like "veto-sdk:test:  Tests  118 passed")
+TESTS_PASSED=$(echo "$CLEAN_OUTPUT" | grep -E "Tests\s+[0-9]+ passed" | grep -oE '[0-9]+ passed' | head -1 || echo "0 passed")
+# Parse "Test Files  8 passed" pattern
+TEST_FILES=$(echo "$CLEAN_OUTPUT" | grep -E "Test Files\s+[0-9]+ passed" | grep -oE '[0-9]+ passed' | head -1 || echo "0 passed")
 echo "Tests: $TESTS_PASSED | Files: $TEST_FILES"
 
 # --- TS SDK Build Size ---
@@ -70,12 +74,17 @@ print(f"TS SDK devDeps: {len(dev)}")
 PYEOF
 fi
 if [ -f "$PYTHON_DIR/pyproject.toml" ]; then
-  python3 - "$PYTHON_DIR/pyproject.toml" <<'PYEOF'
+  # Gracefully handle missing tomllib (Python <3.11) and tomli
+  python3 - "$PYTHON_DIR/pyproject.toml" <<'PYEOF' || echo "Python SDK runtime: ? (toml parser unavailable)"
 import sys
 try:
     import tomllib as toml
 except ModuleNotFoundError:
-    import tomli as toml
+    try:
+        import tomli as toml
+    except ModuleNotFoundError:
+        print("Python SDK runtime: ? (install tomli for Python <3.11)")
+        sys.exit(0)
 with open(sys.argv[1], "rb") as f:
     d = toml.load(f)
 deps = d.get("project", {}).get("dependencies", [])
