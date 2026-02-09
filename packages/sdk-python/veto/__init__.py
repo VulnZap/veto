@@ -64,6 +64,13 @@ from veto.cloud.client import VetoCloudClient, VetoCloudConfig
 from veto.core.interceptor import InterceptionResult
 from veto.core.history import HistoryStats
 
+# Policy IR validation
+from veto.rules.schema_validator import (
+    validate_policy_ir,
+    PolicySchemaError,
+    PolicyValidationError,
+)
+
 # Provider adapters
 from veto.providers.adapters import (
     to_openai,
@@ -141,6 +148,10 @@ __all__ = [
     "AnthropicToolUse",
     "GoogleTool",
     "GoogleFunctionCall",
+    # Policy IR validation
+    "validate_policy_ir",
+    "PolicySchemaError",
+    "PolicyValidationError",
 ]
 
 # Framework integrations (imported on demand to avoid hard dependencies):

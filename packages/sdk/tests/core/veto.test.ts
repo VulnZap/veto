@@ -64,6 +64,8 @@ rules:
       writeFileSync(
         join(RULES_DIR, 'test.yaml'),
         `
+version: "1.0"
+name: test-rules
 rules:
   - id: test-rule
     name: Test Rule
@@ -107,6 +109,8 @@ rules:
       writeFileSync(
         rulePath,
         `
+version: "1.0"
+name: block-rules
 rules:
   - id: block-rule
     name: Block Rule
@@ -160,6 +164,8 @@ rules:
       writeFileSync(
         rulePath,
         `
+version: "1.0"
+name: history-rules
 rules:
   - id: block
     name: Block
@@ -241,6 +247,8 @@ rules:
       // Create rule to trigger validation
       const rulePath = join(RULES_DIR, 'k-rule.yaml');
       writeFileSync(rulePath, `
+version: "1.0"
+name: kernel-rules
 rules:
   - id: k-rule
     name: K Rule
@@ -265,7 +273,7 @@ rules:
       });
 
       const tools = [{ name: 'k_tool', handler: vi.fn(), inputSchema: {} }];
-      // @ts-ignore
+      // @ts-expect-error testing invalid tool type
       const wrapped = veto.wrap(tools);
 
       try {

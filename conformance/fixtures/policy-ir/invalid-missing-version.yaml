@@ -1,0 +1,5 @@
+name: missing-version
+rules:
+  - id: rule-1
+    name: Rule without version
+    action: block
