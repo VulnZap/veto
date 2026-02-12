@@ -83,7 +83,7 @@ class ApprovalData:
     """Data returned when an approval is resolved."""
 
     id: str
-    status: Literal["pending", "approved", "denied"]
+    status: Literal["pending", "approved", "denied", "expired"]
     tool_name: Optional[str] = None
     resolved_by: Optional[str] = None
 

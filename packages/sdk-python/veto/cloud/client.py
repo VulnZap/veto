@@ -9,6 +9,7 @@ Handles communication with the Veto Cloud API for:
 from typing import Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 import os
+import time
 import asyncio
 import aiohttp
 
@@ -349,19 +350,19 @@ class VetoCloudClient:
         """
         opts = options or ApprovalPollOptions()
         url = f"{self._base_url}/v1/approvals/{approval_id}"
-        deadline = asyncio.get_event_loop().time() + opts.timeout
+        deadline = time.monotonic() + opts.timeout
 
         self._log_info(
             "Polling for approval resolution",
             {"approval_id": approval_id, "timeout": opts.timeout},
         )
 
-        while True:
-            try:
-                request_timeout = aiohttp.ClientTimeout(
-                    total=self._config.timeout / 1000
-                )
-                async with aiohttp.ClientSession(timeout=request_timeout) as session:
+        request_timeout = aiohttp.ClientTimeout(
+            total=self._config.timeout / 1000
+        )
+        async with aiohttp.ClientSession(timeout=request_timeout) as session:
+            while True:
+                try:
                     async with session.get(
                         url, headers=self._get_headers()
                     ) as response:
@@ -387,18 +388,18 @@ class VetoCloudClient:
                                     resolved_by=data.get("resolvedBy"),
                                 )
 
-            except ApprovalTimeoutError:
-                raise
-            except Exception as error:
-                self._log_warn(
-                    "Approval poll error",
-                    {"approval_id": approval_id, "error": str(error)},
-                )
+                except ApprovalTimeoutError:
+                    raise
+                except Exception as error:
+                    self._log_warn(
+                        "Approval poll error",
+                        {"approval_id": approval_id, "error": str(error)},
+                    )
 
-            if asyncio.get_event_loop().time() >= deadline:
-                raise ApprovalTimeoutError(approval_id, opts.timeout)
+                if time.monotonic() >= deadline:
+                    raise ApprovalTimeoutError(approval_id, opts.timeout)
 
-            await asyncio.sleep(opts.poll_interval)
+                await asyncio.sleep(opts.poll_interval)
 
     def is_tool_registered(self, tool_name: str) -> bool:
         """Check if a tool has been registered with the cloud."""

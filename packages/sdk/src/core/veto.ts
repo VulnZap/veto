@@ -249,6 +249,9 @@ export class Veto {
     approvalId: string
   ) => void | Promise<void>;
 
+  // Approval preference cache: tool name -> 'approve_all' | 'deny_all'
+  private readonly approvalPreferences = new Map<string, 'approve_all' | 'deny_all'>();
+
   // Loaded rules
   private readonly rules: LoadedRulesState;
 
@@ -1120,6 +1123,28 @@ export class Veto {
     reason: string | undefined,
     metadata: Record<string, unknown> | undefined
   ): Promise<ValidationResult> {
+    // Check approval preference cache first
+    const cachedPref = this.approvalPreferences.get(context.toolName);
+    if (cachedPref === 'approve_all') {
+      this.logger.info('Auto-approved via cached preference', {
+        tool: context.toolName,
+      });
+      return {
+        decision: 'allow',
+        reason: 'Auto-approved (approve all preference)',
+        metadata,
+      };
+    } else if (cachedPref === 'deny_all') {
+      this.logger.info('Auto-denied via cached preference', {
+        tool: context.toolName,
+      });
+      return {
+        decision: 'deny',
+        reason: 'Auto-denied (deny all preference)',
+        metadata,
+      };
+    }
+
     this.logger.info('Awaiting human approval', {
       tool: context.toolName,
       approval_id: approvalId,
@@ -1382,6 +1407,48 @@ export class Veto {
   }
 
 
+
+  /**
+   * Cache an approval preference for a tool.
+   *
+   * When set, subsequent require_approval decisions for this tool
+   * are auto-resolved from the cache without polling the server.
+   *
+   * @param toolName - The tool to set the preference for
+   * @param preference - 'approve_all' or 'deny_all'
+   */
+  setApprovalPreference(
+    toolName: string,
+    preference: 'approve_all' | 'deny_all'
+  ): void {
+    this.approvalPreferences.set(toolName, preference);
+    this.logger.info('Approval preference set', {
+      tool: toolName,
+      preference,
+    });
+  }
+
+  /**
+   * Clear cached approval preferences.
+   *
+   * @param toolName - If provided, clear only for this tool. Otherwise clear all.
+   */
+  clearApprovalPreferences(toolName?: string): void {
+    if (toolName) {
+      this.approvalPreferences.delete(toolName);
+    } else {
+      this.approvalPreferences.clear();
+    }
+  }
+
+  /**
+   * Get the cached approval preference for a tool, if any.
+   */
+  getApprovalPreference(
+    toolName: string
+  ): 'approve_all' | 'deny_all' | undefined {
+    return this.approvalPreferences.get(toolName);
+  }
 
   /**
    * Get history statistics.

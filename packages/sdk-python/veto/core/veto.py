@@ -134,6 +134,9 @@ class Veto:
             timeout=options.approval_timeout or 300.0,
         )
 
+        # Approval preference cache: tool_name -> "approve_all" | "deny_all"
+        self._approval_preferences: dict[str, str] = {}
+
         # Resolve tracking options
         self._session_id = options.session_id or os.environ.get("VETO_SESSION_ID")
         self._agent_id = options.agent_id or os.environ.get("VETO_AGENT_ID")
@@ -415,16 +418,39 @@ class Veto:
             metadata.update(response.metadata)
 
         if response.decision == "require_approval" and response.approval_id:
+            # Check approval preference cache first
+            cached_pref = self._approval_preferences.get(context.tool_name)
+            if cached_pref == "approve_all":
+                self._logger.info(
+                    "Auto-approved via cached preference",
+                    {"tool": context.tool_name},
+                )
+                return ValidationResult(
+                    decision="allow",
+                    reason="Auto-approved (approve all preference)",
+                    metadata=metadata if metadata else None,
+                )
+            elif cached_pref == "deny_all":
+                self._logger.info(
+                    "Auto-denied via cached preference",
+                    {"tool": context.tool_name},
+                )
+                return ValidationResult(
+                    decision="deny",
+                    reason="Auto-denied (deny all preference)",
+                    metadata=metadata if metadata else None,
+                )
+
             self._logger.info(
                 "Awaiting human approval",
                 {"tool": context.tool_name, "approval_id": response.approval_id},
             )
 
-            # Fire on_approval_required hook
+            # Fire on_approval_required hook with full context
             if self._on_approval_required:
                 try:
                     hook_result = self._on_approval_required(
-                        {"toolName": context.tool_name, "arguments": context.arguments},
+                        context,
                         response.approval_id,
                     )
                     if inspect.isawaitable(hook_result):
@@ -760,6 +786,45 @@ class Veto:
         )
 
         return await self._interceptor.intercept(normalized_call)
+
+    def set_approval_preference(
+        self, tool_name: str, preference: str
+    ) -> None:
+        """
+        Cache an approval preference for a tool.
+
+        When set, subsequent require_approval decisions for this tool
+        are auto-resolved from the cache without polling the server.
+
+        Args:
+            tool_name: The tool to set the preference for
+            preference: "approve_all" or "deny_all"
+        """
+        if preference not in ("approve_all", "deny_all"):
+            raise ValueError(f"Invalid preference: {preference}. Use 'approve_all' or 'deny_all'.")
+        self._approval_preferences[tool_name] = preference
+        self._logger.info(
+            "Approval preference set",
+            {"tool": tool_name, "preference": preference},
+        )
+
+    def clear_approval_preferences(
+        self, tool_name: Optional[str] = None
+    ) -> None:
+        """
+        Clear cached approval preferences.
+
+        Args:
+            tool_name: If provided, clear only for this tool. Otherwise clear all.
+        """
+        if tool_name:
+            self._approval_preferences.pop(tool_name, None)
+        else:
+            self._approval_preferences.clear()
+
+    def get_approval_preference(self, tool_name: str) -> Optional[str]:
+        """Get the cached approval preference for a tool, if any."""
+        return self._approval_preferences.get(tool_name)
 
     def get_history_stats(self) -> HistoryStats:
         """Get history statistics."""

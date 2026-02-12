@@ -573,4 +573,123 @@ logging:
       );
     });
   });
+
+  describe('Approval Preferences', () => {
+    it('should auto-approve when approve_all preference is set', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+cloud:
+  baseUrl: "http://localhost:3001"
+  apiKey: "test-key"
+  retries: 0
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      // validate returns require_approval
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'require_approval',
+          reason: 'Needs review',
+          approval_id: 'appr-pref-001',
+        }),
+        text: async () => '',
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      veto.setApprovalPreference('pref_tool', 'approve_all');
+
+      const handler = vi.fn().mockResolvedValue('auto-approved');
+      const tools = [{ name: 'pref_tool', handler, inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      const result = await wrapped[0].handler({});
+      expect(result).toBe('auto-approved');
+      expect(handler).toHaveBeenCalled();
+      // Only the validate call should have been made, no poll call
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should auto-deny when deny_all preference is set', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+cloud:
+  baseUrl: "http://localhost:3001"
+  apiKey: "test-key"
+  retries: 0
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      // validate returns require_approval
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'require_approval',
+          reason: 'Needs review',
+          approval_id: 'appr-pref-002',
+        }),
+        text: async () => '',
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      veto.setApprovalPreference('deny_tool', 'deny_all');
+
+      const handler = vi.fn();
+      const tools = [{ name: 'deny_tool', handler, inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await expect(wrapped[0].handler({})).rejects.toThrow('Tool call denied');
+      expect(handler).not.toHaveBeenCalled();
+      // Only the validate call, no poll
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should clear preferences', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+
+      veto.setApprovalPreference('tool_a', 'approve_all');
+      veto.setApprovalPreference('tool_b', 'deny_all');
+
+      expect(veto.getApprovalPreference('tool_a')).toBe('approve_all');
+      expect(veto.getApprovalPreference('tool_b')).toBe('deny_all');
+
+      // Clear specific
+      veto.clearApprovalPreferences('tool_a');
+      expect(veto.getApprovalPreference('tool_a')).toBeUndefined();
+      expect(veto.getApprovalPreference('tool_b')).toBe('deny_all');
+
+      // Clear all
+      veto.clearApprovalPreferences();
+      expect(veto.getApprovalPreference('tool_b')).toBeUndefined();
+    });
+  });
 });
