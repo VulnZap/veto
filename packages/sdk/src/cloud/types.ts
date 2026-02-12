@@ -4,6 +4,8 @@
  * @module cloud/types
  */
 
+import type { ArgumentConstraint } from '../deterministic/types.js';
+
 /**
  * Configuration for the Veto Cloud client.
  */
@@ -107,4 +109,30 @@ export interface ApprovalPollOptions {
   pollInterval?: number;
   /** Maximum milliseconds to wait before timing out. Default: 300000 (5 min) */
   timeout?: number;
+}
+
+/**
+ * Policy data returned from the server for client-side validation.
+ */
+export interface CloudPolicyResponse {
+  toolName: string;
+  mode: 'deterministic' | 'llm';
+  constraints: ArgumentConstraint[];
+  sessionConstraints?: unknown;
+  rateLimits?: unknown;
+  version: number;
+}
+
+/**
+ * Request payload for logging a client-side decision to the server.
+ */
+export interface LogDecisionRequest {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  decision: 'allow' | 'deny';
+  reason?: string;
+  mode: 'deterministic';
+  latency_ms: number;
+  source: 'client';
+  context?: Record<string, unknown>;
 }

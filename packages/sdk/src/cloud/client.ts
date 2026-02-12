@@ -16,6 +16,8 @@ import type {
   CloudToolRegistration,
   CloudToolRegistrationResponse,
   CloudValidationResponse,
+  CloudPolicyResponse,
+  LogDecisionRequest,
   ApprovalData,
   ApprovalPollOptions,
 } from './types.js';
@@ -292,6 +294,47 @@ export class VetoCloudClient {
 
       await this.delay(Math.min(pollInterval, remainingTime));
     }
+  }
+
+  async fetchPolicy(toolName: string): Promise<CloudPolicyResponse | null> {
+    const url = `${this.config.baseUrl}/v1/policies/${encodeURIComponent(toolName)}`;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return null;
+      }
+
+      return (await response.json()) as CloudPolicyResponse;
+    } catch {
+      return null;
+    }
+  }
+
+  logDecision(request: LogDecisionRequest): void {
+    const url = `${this.config.baseUrl}/v1/decisions`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    fetch(url, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    })
+      .then(() => clearTimeout(timeoutId))
+      .catch(() => clearTimeout(timeoutId));
   }
 
   isToolRegistered(toolName: string): boolean {
