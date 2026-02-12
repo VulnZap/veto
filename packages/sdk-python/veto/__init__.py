@@ -57,8 +57,10 @@ from veto.cloud.types import (
     ValidationRequest,
     ValidationResponse,
     FailedConstraint,
+    ApprovalData,
+    ApprovalPollOptions,
 )
-from veto.cloud.client import VetoCloudClient, VetoCloudConfig
+from veto.cloud.client import VetoCloudClient, VetoCloudConfig, ApprovalTimeoutError
 
 # Interception result
 from veto.core.interceptor import InterceptionResult
@@ -127,6 +129,9 @@ __all__ = [
     "FailedConstraint",
     "VetoCloudClient",
     "VetoCloudConfig",
+    "ApprovalData",
+    "ApprovalPollOptions",
+    "ApprovalTimeoutError",
     # Interception
     "InterceptionResult",
     "HistoryStats",

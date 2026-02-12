@@ -17,6 +17,8 @@ from veto.cloud.types import (
     ToolRegistrationResponse,
     ValidationResponse,
     FailedConstraint,
+    ApprovalData,
+    ApprovalPollOptions,
 )
 
 if TYPE_CHECKING:
@@ -330,29 +332,28 @@ class VetoCloudClient:
     async def poll_approval(
         self,
         approval_id: str,
-        poll_interval: float = 2.0,
-        timeout: float = 300.0,
-    ) -> dict[str, Any]:
+        options: Optional[ApprovalPollOptions] = None,
+    ) -> ApprovalData:
         """
         Poll an approval record until it is resolved or times out.
 
         Args:
             approval_id: The approval ID to poll
-            poll_interval: Seconds between poll requests
-            timeout: Maximum seconds to wait before raising TimeoutError
+            options: Poll options (interval and timeout)
 
         Returns:
-            The resolved approval data dict
+            The resolved approval data
 
         Raises:
-            TimeoutError: If the approval is not resolved within the timeout
+            ApprovalTimeoutError: If the approval is not resolved within the timeout
         """
+        opts = options or ApprovalPollOptions()
         url = f"{self._base_url}/v1/approvals/{approval_id}"
-        deadline = asyncio.get_event_loop().time() + timeout
+        deadline = asyncio.get_event_loop().time() + opts.timeout
 
         self._log_info(
             "Polling for approval resolution",
-            {"approval_id": approval_id, "timeout": timeout},
+            {"approval_id": approval_id, "timeout": opts.timeout},
         )
 
         while True:
@@ -379,8 +380,15 @@ class VetoCloudClient:
                                     "Approval resolved",
                                     {"approval_id": approval_id, "status": status},
                                 )
-                                return data
+                                return ApprovalData(
+                                    id=data.get("id", approval_id),
+                                    status=status,
+                                    tool_name=data.get("toolName"),
+                                    resolved_by=data.get("resolvedBy"),
+                                )
 
+            except ApprovalTimeoutError:
+                raise
             except Exception as error:
                 self._log_warn(
                     "Approval poll error",
@@ -388,11 +396,9 @@ class VetoCloudClient:
                 )
 
             if asyncio.get_event_loop().time() >= deadline:
-                raise TimeoutError(
-                    f"Approval {approval_id} was not resolved within {timeout}s"
-                )
+                raise ApprovalTimeoutError(approval_id, opts.timeout)
 
-            await asyncio.sleep(poll_interval)
+            await asyncio.sleep(opts.poll_interval)
 
     def is_tool_registered(self, tool_name: str) -> bool:
         """Check if a tool has been registered with the cloud."""
@@ -401,3 +407,14 @@ class VetoCloudClient:
     def clear_registration_cache(self) -> None:
         """Clear the local cache of registered tools."""
         self._registered_tools.clear()
+
+
+class ApprovalTimeoutError(Exception):
+    """Error raised when an approval poll times out."""
+
+    def __init__(self, approval_id: str, timeout: float):
+        super().__init__(
+            f"Approval {approval_id} was not resolved within {timeout}s"
+        )
+        self.approval_id = approval_id
+        self.timeout = timeout

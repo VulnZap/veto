@@ -76,3 +76,21 @@ class ValidationResponse:
     # Metadata from cloud (can include LLM reasoning if exceptions were evaluated)
     metadata: Optional[dict[str, Any]] = None
     approval_id: Optional[str] = None
+
+
+@dataclass
+class ApprovalData:
+    """Data returned when an approval is resolved."""
+
+    id: str
+    status: Literal["pending", "approved", "denied"]
+    tool_name: Optional[str] = None
+    resolved_by: Optional[str] = None
+
+
+@dataclass
+class ApprovalPollOptions:
+    """Options for polling an approval record."""
+
+    poll_interval: float = 2.0  # seconds between polls
+    timeout: float = 300.0  # max seconds to wait
