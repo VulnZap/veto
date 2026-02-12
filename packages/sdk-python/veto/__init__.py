@@ -61,6 +61,18 @@ from veto.cloud.types import (
     ApprovalPollOptions,
 )
 from veto.cloud.client import VetoCloudClient, VetoCloudConfig, ApprovalTimeoutError
+from veto.cloud.policy_cache import PolicyCache
+
+# Deterministic validation
+from veto.deterministic.types import (
+    ArgumentConstraint,
+    DeterministicPolicy,
+    LocalValidationResult,
+    ConstraintCheckResult,
+    ValidationEntry,
+)
+from veto.deterministic.validator import validate_deterministic
+from veto.deterministic.regex_safety import is_safe_pattern
 
 # Interception result
 from veto.core.interceptor import InterceptionResult
@@ -132,6 +144,15 @@ __all__ = [
     "ApprovalData",
     "ApprovalPollOptions",
     "ApprovalTimeoutError",
+    "PolicyCache",
+    # Deterministic
+    "ArgumentConstraint",
+    "DeterministicPolicy",
+    "LocalValidationResult",
+    "ConstraintCheckResult",
+    "ValidationEntry",
+    "validate_deterministic",
+    "is_safe_pattern",
     # Interception
     "InterceptionResult",
     "HistoryStats",

@@ -399,6 +399,36 @@ class VetoCloudClient:
 
                 await asyncio.sleep(opts.poll_interval)
 
+    async def fetch_policy(self, tool_name: str) -> "Optional[dict[str, Any]]":
+        """Fetch a policy for a tool from the server."""
+        url = f"{self._base_url}/v1/policies/{tool_name}"
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=self._get_headers()) as response:
+                    if not response.ok:
+                        return None
+                    return await response.json()
+        except Exception:
+            return None
+
+    def log_decision(self, request: "dict[str, Any]") -> None:
+        """Fire-and-forget: log a client-side decision to the server."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.call_soon(lambda: asyncio.ensure_future(self._do_log_decision(request)))
+        except RuntimeError:
+            pass
+
+    async def _do_log_decision(self, request: "dict[str, Any]") -> None:
+        url = f"{self._base_url}/v1/decisions"
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                await session.post(url, json=request, headers=self._get_headers())
+        except Exception:
+            pass
+
     def is_tool_registered(self, tool_name: str) -> bool:
         """Check if a tool has been registered with the cloud."""
         return tool_name in self._registered_tools

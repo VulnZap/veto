@@ -40,6 +40,9 @@ from veto.core.interceptor import (
 )
 from veto.cloud.client import VetoCloudClient, VetoCloudConfig, ApprovalTimeoutError
 from veto.cloud.types import ToolRegistration, ToolParameter, ApprovalPollOptions
+from veto.cloud.policy_cache import PolicyCache
+from veto.deterministic.validator import validate_deterministic
+from veto.deterministic.types import LocalValidationResult
 
 
 # Veto operating mode
@@ -185,6 +188,9 @@ class Veto:
                 history_tracker=self._history_tracker,
             )
         )
+
+        # Initialize policy cache for client-side deterministic validation
+        self._policy_cache = PolicyCache(self._cloud_client)
 
         self._logger.info("Veto initialized successfully")
 
@@ -379,10 +385,71 @@ class Veto:
                     {"message": result.message},
                 )
 
+    def _try_local_deterministic(
+        self, tool_name: str, args: dict[str, Any]
+    ) -> Optional[LocalValidationResult]:
+        policy = self._policy_cache.get(tool_name)
+        if policy is None:
+            return None
+
+        if policy.mode != "deterministic":
+            return None
+        if policy.has_session_constraints or policy.has_rate_limits:
+            return None
+
+        result = validate_deterministic(tool_name, args, policy.constraints)
+
+        self._cloud_client.log_decision({
+            "tool_name": tool_name,
+            "arguments": args,
+            "decision": result.decision,
+            "reason": result.reason,
+            "mode": "deterministic",
+            "latency_ms": result.latency_ms,
+            "source": "client",
+        })
+
+        return result
+
     async def _validate_with_cloud(
         self, context: ValidationContext
     ) -> ValidationResult:
         """Validate a tool call with the Veto Cloud API."""
+        # Fast path: try client-side deterministic validation
+        local_result = self._try_local_deterministic(
+            context.tool_name, context.arguments
+        )
+        if local_result is not None:
+            if local_result.decision == "allow":
+                self._logger.debug(
+                    "Local deterministic validation allowed",
+                    {"tool": context.tool_name, "latency_ms": local_result.latency_ms},
+                )
+                return ValidationResult(
+                    decision="allow", reason=local_result.reason
+                )
+
+            if self._mode == "log":
+                self._logger.warn(
+                    "Tool call would be blocked locally (log mode)",
+                    {"tool": context.tool_name, "reason": local_result.reason},
+                )
+                return ValidationResult(
+                    decision="allow",
+                    reason=f"[LOG MODE] Would block: {local_result.reason}",
+                    metadata={"blocked_in_strict_mode": True, "source": "client"},
+                )
+
+            self._logger.warn(
+                "Tool call blocked by local deterministic validation",
+                {"tool": context.tool_name, "reason": local_result.reason},
+            )
+            return ValidationResult(
+                decision="deny",
+                reason=local_result.reason,
+                metadata={"source": "client"},
+            )
+
         # Build context for cloud API
         api_context: dict[str, Any] = {
             "call_id": context.call_id,
