@@ -285,11 +285,12 @@ export class VetoCloudClient {
         });
       }
 
-      if (Date.now() >= deadline) {
+      const remainingTime = deadline - Date.now();
+      if (remainingTime <= 0) {
         throw new ApprovalTimeoutError(approvalId, timeout);
       }
 
-      await this.delay(pollInterval);
+      await this.delay(Math.min(pollInterval, remainingTime));
     }
   }
 

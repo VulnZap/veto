@@ -551,9 +551,9 @@ class TestApprovalFlow:
         await wrapped[0].handler({})
 
         # Verify poll_approval was called with the configured options
-        call_args = mock_cloud_client.poll_approval.call_args
-        poll_opts = call_args.kwargs.get("options") or call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("options")
-        assert poll_opts is not None
+        mock_cloud_client.poll_approval.assert_called_once()
+        poll_opts = mock_cloud_client.poll_approval.call_args.kwargs.get("options")
+        assert poll_opts is not None, "poll_approval should receive options kwarg"
         assert poll_opts.poll_interval == 0.5
         assert poll_opts.timeout == 10.0
 

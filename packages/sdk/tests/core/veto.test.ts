@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Veto, ToolCallDeniedError } from '../../src/core/veto.js';
-import { VetoCloudClient } from '../../src/cloud/client.js';
 
 const TEST_DIR = '/tmp/veto-test-' + Date.now();
 const VETO_DIR = join(TEST_DIR, 'veto');

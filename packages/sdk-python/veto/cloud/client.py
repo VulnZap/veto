@@ -388,8 +388,6 @@ class VetoCloudClient:
                                     resolved_by=data.get("resolvedBy"),
                                 )
 
-                except ApprovalTimeoutError:
-                    raise
                 except Exception as error:
                     self._log_warn(
                         "Approval poll error",
