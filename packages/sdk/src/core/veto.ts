@@ -22,7 +22,7 @@ import type {
   LogLevel,
 } from '../types/config.js';
 import { createLogger, type Logger } from '../utils/logger.js';
-import { generateToolCallId } from '../utils/id.js';
+import { generateId, generateToolCallId } from '../utils/id.js';
 import { ValidationEngine } from './validator.js';
 import { HistoryTracker, type HistoryStats } from './history.js';
 import { Interceptor, ToolCallDeniedError, type InterceptionResult } from './interceptor.js';
@@ -339,7 +339,7 @@ export class Veto {
     this.onApprovalRequired = options.onApprovalRequired;
 
     // Resolve tracking options
-    this.sessionId = options.sessionId ?? process.env.VETO_SESSION_ID;
+    this.sessionId = options.sessionId ?? process.env.VETO_SESSION_ID ?? generateId('session');
     this.agentId = options.agentId ?? process.env.VETO_AGENT_ID;
 
     this.logger.info('Veto configuration loaded', {
