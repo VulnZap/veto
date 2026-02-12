@@ -19,7 +19,8 @@ export function validateDeterministic(
     const value = args[constraint.argumentName];
 
     if (value === undefined || value === null) {
-      if (constraint.required) {
+      const keyExists = constraint.argumentName in args;
+      if (constraint.required && !keyExists) {
         return {
           decision: 'deny',
           reason: `Required argument '${constraint.argumentName}' is missing`,
@@ -89,6 +90,14 @@ function checkNumberConstraints(
   value: number,
   constraint: ArgumentConstraint
 ): ConstraintCheckResult {
+  if (Number.isNaN(value)) {
+    return { pass: false, reason: 'value is NaN' };
+  }
+
+  if (!Number.isFinite(value)) {
+    return { pass: false, reason: `value ${value} is not finite` };
+  }
+
   if (constraint.greaterThan !== undefined && value <= constraint.greaterThan) {
     return {
       pass: false,
@@ -160,13 +169,13 @@ function checkStringConstraints(
       };
     }
     try {
-      const regex = new RegExp(constraint.regex);
       if (!isSafePattern(constraint.regex)) {
         return {
           pass: false,
           reason: `regex pattern is potentially unsafe (ReDoS risk): ${constraint.regex}`,
         };
       }
+      const regex = new RegExp(constraint.regex);
       if (!regex.test(value)) {
         return {
           pass: false,

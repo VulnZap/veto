@@ -203,5 +203,25 @@ describe('validateDeterministic', () => {
       expect(result.decision).toBe('deny');
       expect(result.reason).toContain('invalid regex');
     });
+
+    it('should deny NaN values', () => {
+      const constraints = [makeConstraint({ argumentName: 'val', minimum: 0, maximum: 100 })];
+      const result = validateDeterministic('tool', { val: NaN }, constraints);
+      expect(result.decision).toBe('deny');
+      expect(result.reason).toContain('NaN');
+    });
+
+    it('should deny Infinity values', () => {
+      const constraints = [makeConstraint({ argumentName: 'val', minimum: 0 })];
+      expect(validateDeterministic('tool', { val: Infinity }, constraints).decision).toBe('deny');
+      expect(validateDeterministic('tool', { val: -Infinity }, constraints).decision).toBe('deny');
+    });
+
+    it('should use notNull (not required) when key is present with null value', () => {
+      const constraints = [makeConstraint({ argumentName: 'val', required: true, notNull: true })];
+      const result = validateDeterministic('tool', { val: null }, constraints);
+      expect(result.decision).toBe('deny');
+      expect(result.reason).toContain('cannot be null');
+    });
   });
 });

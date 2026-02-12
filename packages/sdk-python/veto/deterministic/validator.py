@@ -28,7 +28,7 @@ def validate_deterministic(
         if value is None:
             key_exists = constraint.argument_name in args
 
-            if constraint.required:
+            if constraint.required and not key_exists:
                 return LocalValidationResult(
                     decision="deny",
                     reason=f"Required argument '{constraint.argument_name}' is missing",
@@ -89,6 +89,16 @@ def _check_constraints(value: Any, constraint: ArgumentConstraint) -> Constraint
 def _check_number_constraints(
     value: float, constraint: ArgumentConstraint
 ) -> ConstraintCheckResult:
+    import math
+
+    if math.isnan(value):
+        return ConstraintCheckResult(passed=False, reason="value is NaN")
+
+    if math.isinf(value):
+        return ConstraintCheckResult(
+            passed=False, reason=f"value {value} is not finite"
+        )
+
     if constraint.greater_than is not None and value <= constraint.greater_than:
         return ConstraintCheckResult(
             passed=False,
@@ -142,12 +152,12 @@ def _check_string_constraints(
                 reason=f"regex pattern too long ({len(constraint.regex)} chars, max 256)",
             )
         try:
-            compiled = re.compile(constraint.regex)
             if not is_safe_pattern(constraint.regex):
                 return ConstraintCheckResult(
                     passed=False,
                     reason=f"regex pattern is potentially unsafe (ReDoS risk): {constraint.regex}",
                 )
+            compiled = re.compile(constraint.regex)
             if not compiled.search(value):
                 return ConstraintCheckResult(
                     passed=False,

@@ -1046,6 +1046,10 @@ export class Veto {
       mode: 'deterministic',
       latency_ms: result.latencyMs,
       source: 'client',
+      context: {
+        session_id: this.sessionId,
+        agent_id: this.agentId,
+      },
     });
 
     return result;

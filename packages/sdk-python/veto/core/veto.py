@@ -407,6 +407,10 @@ class Veto:
             "mode": "deterministic",
             "latency_ms": result.latency_ms,
             "source": "client",
+            "context": {
+                "session_id": self._session_id,
+                "agent_id": self._agent_id,
+            },
         })
 
         return result

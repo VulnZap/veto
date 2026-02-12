@@ -298,11 +298,10 @@ export class VetoCloudClient {
 
   async fetchPolicy(toolName: string): Promise<CloudPolicyResponse | null> {
     const url = `${this.config.baseUrl}/v1/policies/${encodeURIComponent(toolName)}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
       const response = await fetch(url, {
         method: 'GET',
         headers: this.getHeaders(),
@@ -317,6 +316,7 @@ export class VetoCloudClient {
 
       return (await response.json()) as CloudPolicyResponse;
     } catch {
+      clearTimeout(timeoutId);
       return null;
     }
   }

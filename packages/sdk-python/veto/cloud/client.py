@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import os
 import time
 import asyncio
+from urllib.parse import quote
 import aiohttp
 
 from veto.cloud.types import (
@@ -401,7 +402,7 @@ class VetoCloudClient:
 
     async def fetch_policy(self, tool_name: str) -> "Optional[dict[str, Any]]":
         """Fetch a policy for a tool from the server."""
-        url = f"{self._base_url}/v1/policies/{tool_name}"
+        url = f"{self._base_url}/v1/policies/{quote(tool_name, safe='')}"
         try:
             timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:

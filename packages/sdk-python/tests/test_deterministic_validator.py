@@ -172,3 +172,20 @@ class TestEdgeCases:
         result = validate_deterministic("tool", {"val": "abcdef"}, constraints)
         assert result.decision == "deny"
         assert "invalid regex" in (result.reason or "")
+
+    def test_deny_nan_values(self):
+        constraints = [make_constraint(argument_name="val", minimum=0, maximum=100)]
+        result = validate_deterministic("tool", {"val": float("nan")}, constraints)
+        assert result.decision == "deny"
+        assert "NaN" in (result.reason or "")
+
+    def test_deny_infinity_values(self):
+        constraints = [make_constraint(argument_name="val", minimum=0)]
+        assert validate_deterministic("tool", {"val": float("inf")}, constraints).decision == "deny"
+        assert validate_deterministic("tool", {"val": float("-inf")}, constraints).decision == "deny"
+
+    def test_use_not_null_when_key_present_with_none(self):
+        constraints = [make_constraint(argument_name="val", required=True, not_null=True)]
+        result = validate_deterministic("tool", {"val": None}, constraints)
+        assert result.decision == "deny"
+        assert "cannot be null" in (result.reason or "")
