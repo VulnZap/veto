@@ -1,5 +1,5 @@
 ---
-"veto": minor
+"veto-sdk": minor
 ---
 
 added browser-use plugin
