@@ -51,9 +51,15 @@ class PolicyCache:
 
         self._refreshing.add(tool_name)
 
+        def _schedule() -> None:
+            try:
+                asyncio.ensure_future(self._do_refresh(tool_name))
+            except Exception:
+                self._refreshing.discard(tool_name)
+
         try:
             loop = asyncio.get_running_loop()
-            loop.call_soon(lambda: asyncio.ensure_future(self._do_refresh(tool_name)))
+            loop.call_soon(_schedule)
         except RuntimeError:
             self._refreshing.discard(tool_name)
 

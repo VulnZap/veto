@@ -465,12 +465,33 @@ class Veto:
         if context.custom:
             api_context["custom"] = context.custom
 
-        # Call cloud for validation
-        response = await self._cloud_client.validate(
-            tool_name=context.tool_name,
-            arguments=context.arguments,
-            context=api_context,
-        )
+        try:
+            response = await self._cloud_client.validate(
+                tool_name=context.tool_name,
+                arguments=context.arguments,
+                context=api_context,
+            )
+        except Exception as exc:
+            reason = str(exc)
+            if self._mode == "log":
+                self._logger.warn(
+                    "Cloud unavailable (log mode, allowing)",
+                    {"reason": reason},
+                )
+                return ValidationResult(
+                    decision="allow",
+                    reason=f"Cloud unavailable: {reason}",
+                    metadata={"cloud_error": True},
+                )
+            self._logger.error(
+                "Cloud unavailable (strict mode, blocking)",
+                {"reason": reason},
+            )
+            return ValidationResult(
+                decision="deny",
+                reason=f"Cloud unavailable: {reason}",
+                metadata={"cloud_error": True},
+            )
 
         # Build metadata
         metadata: dict[str, Any] = {}
@@ -644,15 +665,10 @@ class Veto:
 
         # Register tools with cloud (fire and forget, don't block wrapping)
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're already in an async context, schedule as task
-                asyncio.create_task(self._register_tools_with_cloud(tools))
-            else:
-                # If not in async context, run synchronously
-                loop.run_until_complete(self._register_tools_with_cloud(tools))
+            asyncio.get_running_loop()
+            asyncio.create_task(self._register_tools_with_cloud(tools))
         except RuntimeError:
-            # No event loop, create one for registration
+            # No running event loop — run synchronously
             asyncio.run(self._register_tools_with_cloud(tools))
 
         return [self.wrap_tool(tool) for tool in tools]
@@ -766,21 +782,25 @@ class Veto:
 
                             return result.final_arguments or input_data
 
-                        # Try to get existing loop or create new one
+                        import concurrent.futures
+
                         try:
-                            loop = asyncio.get_event_loop()
-                            if loop.is_running():
-                                # Can't run sync in async context, fall through to original
-                                pass
-                            else:
-                                final_args = loop.run_until_complete(validate_and_invoke())
-                                return original_invoke(final_args, *args, **kwargs)
+                            loop = asyncio.get_running_loop()
                         except RuntimeError:
-                            final_args = asyncio.run(validate_and_invoke())
+                            loop = None
+
+                        if loop is not None and loop.is_running():
+                            # Inside a running async loop — run validation
+                            # in a separate thread with its own event loop
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                                final_args = pool.submit(
+                                    asyncio.run, validate_and_invoke()
+                                ).result()
                             return original_invoke(final_args, *args, **kwargs)
 
-                        # Fallback: just call original without validation
-                        return original_invoke(input_data, *args, **kwargs)
+                        # No running loop — use asyncio.run directly
+                        final_args = asyncio.run(validate_and_invoke())
+                        return original_invoke(final_args, *args, **kwargs)
 
                     object.__setattr__(wrapped, "invoke", wrapped_invoke)
 
