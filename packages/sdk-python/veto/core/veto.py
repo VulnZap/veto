@@ -38,8 +38,8 @@ from veto.core.interceptor import (
     InterceptionResult,
     ToolCallDeniedError,
 )
-from veto.cloud.client import VetoCloudClient, VetoCloudConfig
-from veto.cloud.types import ToolRegistration, ToolParameter
+from veto.cloud.client import VetoCloudClient, VetoCloudConfig, ApprovalTimeoutError
+from veto.cloud.types import ToolRegistration, ToolParameter, ApprovalPollOptions
 
 
 # Veto operating mode
@@ -79,6 +79,12 @@ class VetoOptions:
     timeout: Optional[int] = None
     # Number of retries for API calls
     retries: Optional[int] = None
+    # Callback fired when a tool call requires human approval
+    on_approval_required: Optional[Callable[..., Any]] = None
+    # Seconds between approval poll requests (default: 2.0)
+    approval_poll_interval: Optional[float] = None
+    # Max seconds to wait for approval resolution (default: 300.0)
+    approval_timeout: Optional[float] = None
 
 
 @runtime_checkable
@@ -120,6 +126,16 @@ class Veto:
         self._logger = logger
         self._mode: VetoMode = options.mode or "strict"
         self._cloud_client = cloud_client
+
+        # Approval options
+        self._on_approval_required = options.on_approval_required
+        self._approval_poll_options = ApprovalPollOptions(
+            poll_interval=options.approval_poll_interval or 2.0,
+            timeout=options.approval_timeout or 300.0,
+        )
+
+        # Approval preference cache: tool_name -> "approve_all" | "deny_all"
+        self._approval_preferences: dict[str, str] = {}
 
         # Resolve tracking options
         self._session_id = options.session_id or os.environ.get("VETO_SESSION_ID")
@@ -402,36 +418,75 @@ class Veto:
             metadata.update(response.metadata)
 
         if response.decision == "require_approval" and response.approval_id:
+            # Check approval preference cache first
+            cached_pref = self._approval_preferences.get(context.tool_name)
+            if cached_pref == "approve_all":
+                self._logger.info(
+                    "Auto-approved via cached preference",
+                    {"tool": context.tool_name},
+                )
+                return ValidationResult(
+                    decision="allow",
+                    reason="Auto-approved (approve all preference)",
+                    metadata=metadata if metadata else None,
+                )
+            elif cached_pref == "deny_all":
+                self._logger.info(
+                    "Auto-denied via cached preference",
+                    {"tool": context.tool_name},
+                )
+                return ValidationResult(
+                    decision="deny",
+                    reason="Auto-denied (deny all preference)",
+                    metadata=metadata if metadata else None,
+                )
+
             self._logger.info(
                 "Awaiting human approval",
                 {"tool": context.tool_name, "approval_id": response.approval_id},
             )
+
+            # Fire on_approval_required hook with full context
+            if self._on_approval_required:
+                try:
+                    hook_result = self._on_approval_required(
+                        context,
+                        response.approval_id,
+                    )
+                    if inspect.isawaitable(hook_result):
+                        await hook_result
+                except Exception as hook_err:
+                    self._logger.warn(
+                        "on_approval_required hook error",
+                        {"error": str(hook_err)},
+                    )
+
             try:
                 approval_data = await self._cloud_client.poll_approval(
-                    response.approval_id
+                    response.approval_id,
+                    options=self._approval_poll_options,
                 )
-                approval_status = approval_data.get("status", "denied")
-                if approval_status == "approved":
+                if approval_data.status == "approved":
                     self._logger.info(
                         "Approval granted",
                         {"tool": context.tool_name, "approval_id": response.approval_id},
                     )
                     return ValidationResult(
                         decision="allow",
-                        reason=f"Approved by human: {approval_data.get('resolvedBy', 'unknown')}",
+                        reason=f"Approved by human: {approval_data.resolved_by or 'unknown'}",
                         metadata=metadata if metadata else None,
                     )
                 else:
                     self._logger.warn(
                         "Approval denied or expired",
-                        {"tool": context.tool_name, "status": approval_status},
+                        {"tool": context.tool_name, "status": approval_data.status},
                     )
                     return ValidationResult(
                         decision="deny",
-                        reason=f"Approval {approval_status}: {response.reason}",
+                        reason=f"Approval {approval_data.status}: {response.reason}",
                         metadata=metadata if metadata else None,
                     )
-            except TimeoutError:
+            except ApprovalTimeoutError:
                 self._logger.warn(
                     "Approval timed out",
                     {"tool": context.tool_name, "approval_id": response.approval_id},
@@ -731,6 +786,45 @@ class Veto:
         )
 
         return await self._interceptor.intercept(normalized_call)
+
+    def set_approval_preference(
+        self, tool_name: str, preference: str
+    ) -> None:
+        """
+        Cache an approval preference for a tool.
+
+        When set, subsequent require_approval decisions for this tool
+        are auto-resolved from the cache without polling the server.
+
+        Args:
+            tool_name: The tool to set the preference for
+            preference: "approve_all" or "deny_all"
+        """
+        if preference not in ("approve_all", "deny_all"):
+            raise ValueError(f"Invalid preference: {preference}. Use 'approve_all' or 'deny_all'.")
+        self._approval_preferences[tool_name] = preference
+        self._logger.info(
+            "Approval preference set",
+            {"tool": tool_name, "preference": preference},
+        )
+
+    def clear_approval_preferences(
+        self, tool_name: Optional[str] = None
+    ) -> None:
+        """
+        Clear cached approval preferences.
+
+        Args:
+            tool_name: If provided, clear only for this tool. Otherwise clear all.
+        """
+        if tool_name:
+            self._approval_preferences.pop(tool_name, None)
+        else:
+            self._approval_preferences.clear()
+
+    def get_approval_preference(self, tool_name: str) -> Optional[str]:
+        """Get the cached approval preference for a tool, if any."""
+        return self._approval_preferences.get(tool_name)
 
     def get_history_stats(self) -> HistoryStats:
         """Get history statistics."""

@@ -38,6 +38,7 @@ export {
   ToolCallDeniedError,
   type VetoOptions,
   type VetoMode,
+  type ValidationMode,
   type WrappedTools,
   type WrappedHandler,
 } from './core/veto.js';
@@ -82,6 +83,16 @@ export type {
   CustomToolCall,
 } from './custom/types.js';
 export { CustomClient } from './custom/client.js';
+
+// Cloud types
+export type {
+  VetoCloudConfig,
+  CloudValidationResponse,
+  FailedConstraint,
+  ApprovalData,
+  ApprovalPollOptions,
+} from './cloud/types.js';
+export { VetoCloudClient, ApprovalTimeoutError } from './cloud/client.js';
 
 // Interception result
 export type { InterceptionResult } from './core/interceptor.js';

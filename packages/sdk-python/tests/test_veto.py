@@ -7,9 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from veto import Veto, VetoOptions
+from veto import Veto, VetoOptions, ApprovalTimeoutError
 from veto.cloud.client import VetoCloudClient
-from veto.cloud.types import ValidationResponse, ToolRegistrationResponse
+from veto.cloud.types import ValidationResponse, ToolRegistrationResponse, ApprovalData
+from veto.types.config import ValidationContext
 
 
 @pytest.fixture
@@ -356,3 +357,295 @@ class TestCloudValidation:
         call_args = mock_cloud_client.validate.call_args
         assert call_args.kwargs["tool_name"] == "validate_args_tool"
         assert call_args.kwargs["arguments"] == {"amount": 500, "currency": "USD"}
+
+
+class TestApprovalFlow:
+    """Tests for require_approval flow."""
+
+    async def test_approval_allowed(self, mock_cloud_client):
+        """Should allow tool call when approval is granted."""
+        mock_cloud_client.validate = AsyncMock(
+            return_value=ValidationResponse(
+                decision="require_approval",
+                reason="Needs review",
+                approval_id="appr-001",
+            )
+        )
+        mock_cloud_client.poll_approval = AsyncMock(
+            return_value=ApprovalData(
+                id="appr-001",
+                status="approved",
+                tool_name="sensitive_tool",
+                resolved_by="admin@corp.com",
+            )
+        )
+
+        class MockTool:
+            name = "sensitive_tool"
+            description = "Sensitive tool"
+
+            async def handler(self, args):
+                return "executed"
+
+        tool = MockTool()
+        veto = await Veto.init(VetoOptions(api_key="test", log_level="silent"))
+        veto._cloud_client = mock_cloud_client
+
+        wrapped = veto.wrap([tool])
+        result = await wrapped[0].handler({"data": "sensitive"})
+
+        assert result == "executed"
+        mock_cloud_client.poll_approval.assert_called_once()
+
+    async def test_approval_denied(self, mock_cloud_client):
+        """Should deny tool call when approval is denied."""
+        mock_cloud_client.validate = AsyncMock(
+            return_value=ValidationResponse(
+                decision="require_approval",
+                reason="Needs review",
+                approval_id="appr-002",
+            )
+        )
+        mock_cloud_client.poll_approval = AsyncMock(
+            return_value=ApprovalData(
+                id="appr-002",
+                status="denied",
+                tool_name="dangerous_tool",
+                resolved_by="admin",
+            )
+        )
+
+        class MockTool:
+            name = "dangerous_tool"
+            description = "Dangerous tool"
+
+            async def handler(self, args):
+                return "should not reach"
+
+        tool = MockTool()
+        veto = await Veto.init(VetoOptions(api_key="test", log_level="silent"))
+        veto._cloud_client = mock_cloud_client
+
+        wrapped = veto.wrap([tool])
+
+        from veto.core.interceptor import ToolCallDeniedError
+        with pytest.raises(ToolCallDeniedError):
+            await wrapped[0].handler({})
+
+    async def test_approval_timeout(self, mock_cloud_client):
+        """Should deny when approval times out."""
+        mock_cloud_client.validate = AsyncMock(
+            return_value=ValidationResponse(
+                decision="require_approval",
+                reason="Review needed",
+                approval_id="appr-003",
+            )
+        )
+        mock_cloud_client.poll_approval = AsyncMock(
+            side_effect=ApprovalTimeoutError("appr-003", 0.05)
+        )
+
+        class MockTool:
+            name = "timeout_tool"
+            description = "Tool that times out"
+
+            async def handler(self, args):
+                return "should not reach"
+
+        tool = MockTool()
+        veto = await Veto.init(VetoOptions(
+            api_key="test",
+            log_level="silent",
+            approval_timeout=0.05,
+        ))
+        veto._cloud_client = mock_cloud_client
+
+        wrapped = veto.wrap([tool])
+
+        from veto.core.interceptor import ToolCallDeniedError
+        with pytest.raises(ToolCallDeniedError):
+            await wrapped[0].handler({})
+
+    async def test_on_approval_required_hook(self, mock_cloud_client):
+        """Should fire on_approval_required callback with ValidationContext."""
+        mock_cloud_client.validate = AsyncMock(
+            return_value=ValidationResponse(
+                decision="require_approval",
+                reason="Needs human",
+                approval_id="appr-004",
+            )
+        )
+        mock_cloud_client.poll_approval = AsyncMock(
+            return_value=ApprovalData(
+                id="appr-004",
+                status="approved",
+                tool_name="hook_tool",
+                resolved_by="user",
+            )
+        )
+
+        hook_calls: list[tuple] = []
+
+        def on_approval(context, approval_id):
+            hook_calls.append((context, approval_id))
+
+        class MockTool:
+            name = "hook_tool"
+            description = "Tool for hook test"
+
+            async def handler(self, args):
+                return "ok"
+
+        tool = MockTool()
+        veto = await Veto.init(VetoOptions(
+            api_key="test",
+            log_level="silent",
+            on_approval_required=on_approval,
+        ))
+        veto._cloud_client = mock_cloud_client
+
+        wrapped = veto.wrap([tool])
+        await wrapped[0].handler({})
+
+        assert len(hook_calls) == 1
+        ctx = hook_calls[0][0]
+        assert isinstance(ctx, ValidationContext)
+        assert ctx.tool_name == "hook_tool"
+        assert hook_calls[0][1] == "appr-004"
+
+    async def test_configurable_poll_options(self, mock_cloud_client):
+        """Should pass configured poll options to cloud client."""
+        mock_cloud_client.validate = AsyncMock(
+            return_value=ValidationResponse(
+                decision="require_approval",
+                reason="Review",
+                approval_id="appr-005",
+            )
+        )
+        mock_cloud_client.poll_approval = AsyncMock(
+            return_value=ApprovalData(
+                id="appr-005",
+                status="approved",
+                tool_name="poll_tool",
+                resolved_by="reviewer",
+            )
+        )
+
+        class MockTool:
+            name = "poll_tool"
+            description = "Tool for poll options test"
+
+            async def handler(self, args):
+                return "ok"
+
+        tool = MockTool()
+        veto = await Veto.init(VetoOptions(
+            api_key="test",
+            log_level="silent",
+            approval_poll_interval=0.5,
+            approval_timeout=10.0,
+        ))
+        veto._cloud_client = mock_cloud_client
+
+        wrapped = veto.wrap([tool])
+        await wrapped[0].handler({})
+
+        # Verify poll_approval was called with the configured options
+        mock_cloud_client.poll_approval.assert_called_once()
+        poll_opts = mock_cloud_client.poll_approval.call_args.kwargs.get("options")
+        assert poll_opts is not None, "poll_approval should receive options kwarg"
+        assert poll_opts.poll_interval == 0.5
+        assert poll_opts.timeout == 10.0
+
+
+class TestApprovalPreferences:
+    """Tests for approve all / deny all preference cache."""
+
+    async def test_approve_all_skips_polling(self, mock_cloud_client):
+        """Should auto-approve without polling when approve_all is set."""
+        mock_cloud_client.validate = AsyncMock(
+            return_value=ValidationResponse(
+                decision="require_approval",
+                reason="Needs review",
+                approval_id="appr-pref-001",
+            )
+        )
+
+        class MockTool:
+            name = "pref_tool"
+            description = "Tool for pref test"
+
+            async def handler(self, args):
+                return "auto-approved"
+
+        tool = MockTool()
+        veto = await Veto.init(VetoOptions(api_key="test", log_level="silent"))
+        veto._cloud_client = mock_cloud_client
+
+        # Set approve_all preference
+        veto.set_approval_preference("pref_tool", "approve_all")
+        assert veto.get_approval_preference("pref_tool") == "approve_all"
+
+        wrapped = veto.wrap([tool])
+        result = await wrapped[0].handler({})
+
+        assert result == "auto-approved"
+        # poll_approval should NOT have been called
+        mock_cloud_client.poll_approval.assert_not_called()
+
+    async def test_deny_all_skips_polling(self, mock_cloud_client):
+        """Should auto-deny without polling when deny_all is set."""
+        mock_cloud_client.validate = AsyncMock(
+            return_value=ValidationResponse(
+                decision="require_approval",
+                reason="Needs review",
+                approval_id="appr-pref-002",
+            )
+        )
+
+        class MockTool:
+            name = "deny_pref_tool"
+            description = "Tool for deny pref test"
+
+            async def handler(self, args):
+                return "should not reach"
+
+        tool = MockTool()
+        veto = await Veto.init(VetoOptions(api_key="test", log_level="silent"))
+        veto._cloud_client = mock_cloud_client
+
+        veto.set_approval_preference("deny_pref_tool", "deny_all")
+
+        wrapped = veto.wrap([tool])
+
+        from veto.core.interceptor import ToolCallDeniedError
+        with pytest.raises(ToolCallDeniedError):
+            await wrapped[0].handler({})
+
+        mock_cloud_client.poll_approval.assert_not_called()
+
+    async def test_clear_preferences(self, mock_cloud_client):
+        """Should clear preferences so polling resumes."""
+        veto = await Veto.init(VetoOptions(api_key="test", log_level="silent"))
+
+        veto.set_approval_preference("tool_a", "approve_all")
+        veto.set_approval_preference("tool_b", "deny_all")
+
+        assert veto.get_approval_preference("tool_a") == "approve_all"
+        assert veto.get_approval_preference("tool_b") == "deny_all"
+
+        # Clear specific tool
+        veto.clear_approval_preferences("tool_a")
+        assert veto.get_approval_preference("tool_a") is None
+        assert veto.get_approval_preference("tool_b") == "deny_all"
+
+        # Clear all
+        veto.clear_approval_preferences()
+        assert veto.get_approval_preference("tool_b") is None
+
+    async def test_invalid_preference_raises(self, mock_cloud_client):
+        """Should raise ValueError for invalid preference."""
+        veto = await Veto.init(VetoOptions(api_key="test", log_level="silent"))
+
+        with pytest.raises(ValueError):
+            veto.set_approval_preference("tool", "invalid")

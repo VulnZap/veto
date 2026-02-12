@@ -1,0 +1,286 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { VetoCloudClient, ApprovalTimeoutError } from '../../src/cloud/client.js';
+import type { Logger } from '../../src/utils/logger.js';
+
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+function createLogger(): Logger {
+  return {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+}
+
+describe('VetoCloudClient', () => {
+  let logger: Logger;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    logger = createLogger();
+  });
+
+  describe('validate', () => {
+    it('should return allow decision', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ decision: 'allow', reason: 'Allowed' }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001', retries: 0 },
+        logger,
+      });
+
+      const result = await client.validate('send_email', { to: 'test@test.com' });
+
+      expect(result.decision).toBe('allow');
+      expect(result.reason).toBe('Allowed');
+    });
+
+    it('should return deny decision', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'deny',
+          reason: 'Blocked by policy',
+          failed_constraints: [
+            { parameter: 'amount', constraint_type: 'range', expected: '<=1000', actual: 5000, message: 'Amount exceeds limit' },
+          ],
+        }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001', retries: 0 },
+        logger,
+      });
+
+      const result = await client.validate('transfer', { amount: 5000 });
+
+      expect(result.decision).toBe('deny');
+      expect(result.reason).toBe('Blocked by policy');
+      expect(result.failed_constraints).toHaveLength(1);
+      expect(result.failed_constraints![0].parameter).toBe('amount');
+    });
+
+    it('should return require_approval decision with approval_id', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'require_approval',
+          reason: 'Needs human review',
+          approval_id: 'appr-123',
+        }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001', retries: 0 },
+        logger,
+      });
+
+      const result = await client.validate('delete_user', { userId: '42' });
+
+      expect(result.decision).toBe('require_approval');
+      expect(result.approval_id).toBe('appr-123');
+      expect(result.reason).toBe('Needs human review');
+    });
+
+    it('should send X-Veto-API-Key header', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ decision: 'allow' }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'my-api-key', baseUrl: 'http://localhost:3001', retries: 0 },
+        logger,
+      });
+
+      await client.validate('test', {});
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:3001/v1/tools/validate',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'X-Veto-API-Key': 'my-api-key',
+          }),
+        })
+      );
+    });
+
+    it('should return deny on API failure with retries exhausted', async () => {
+      mockFetch.mockRejectedValue(new Error('Network error'));
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001', retries: 1, retryDelay: 10 },
+        logger,
+      });
+
+      const result = await client.validate('test', {});
+
+      expect(result.decision).toBe('deny');
+      expect(result.metadata).toEqual({ api_error: true });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('pollApproval', () => {
+    it('should return immediately when approval is resolved', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'appr-123',
+          status: 'approved',
+          resolvedBy: 'admin@example.com',
+          toolName: 'delete_user',
+        }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001' },
+        logger,
+      });
+
+      const result = await client.pollApproval('appr-123');
+
+      expect(result.status).toBe('approved');
+      expect(result.resolvedBy).toBe('admin@example.com');
+    });
+
+    it('should poll multiple times until resolved', async () => {
+      // First poll: pending
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'appr-123', status: 'pending', toolName: 'test' }),
+        text: async () => '',
+      });
+      // Second poll: approved
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'appr-123', status: 'approved', resolvedBy: 'user', toolName: 'test' }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001' },
+        logger,
+      });
+
+      const result = await client.pollApproval('appr-123', { pollInterval: 10 });
+
+      expect(result.status).toBe('approved');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should return denied status', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'appr-123', status: 'denied', resolvedBy: 'admin', toolName: 'test' }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001' },
+        logger,
+      });
+
+      const result = await client.pollApproval('appr-123');
+
+      expect(result.status).toBe('denied');
+    });
+
+    it('should throw ApprovalTimeoutError on timeout', async () => {
+      // Always return pending
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: 'appr-123', status: 'pending', toolName: 'test' }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001' },
+        logger,
+      });
+
+      await expect(
+        client.pollApproval('appr-123', { pollInterval: 10, timeout: 50 })
+      ).rejects.toThrow(ApprovalTimeoutError);
+    });
+
+    it('should continue polling on network errors', async () => {
+      // First: error
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+      // Second: resolved
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'appr-123', status: 'approved', resolvedBy: 'user', toolName: 'test' }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001' },
+        logger,
+      });
+
+      const result = await client.pollApproval('appr-123', { pollInterval: 10 });
+
+      expect(result.status).toBe('approved');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('registerTools', () => {
+    it('should register tools and cache them', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: 'Registered' }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001', retries: 0 },
+        logger,
+      });
+
+      const result = await client.registerTools([
+        { name: 'tool1', parameters: [] },
+        { name: 'tool2', parameters: [] },
+      ]);
+
+      expect(result.success).toBe(true);
+      expect(result.registered_tools).toEqual(['tool1', 'tool2']);
+      expect(client.isToolRegistered('tool1')).toBe(true);
+      expect(client.isToolRegistered('tool2')).toBe(true);
+    });
+
+    it('should skip already registered tools', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: 'ok' }),
+        text: async () => '',
+      });
+
+      const client = new VetoCloudClient({
+        config: { apiKey: 'test-key', baseUrl: 'http://localhost:3001', retries: 0 },
+        logger,
+      });
+
+      await client.registerTools([{ name: 'tool1', parameters: [] }]);
+      mockFetch.mockClear();
+
+      const result = await client.registerTools([{ name: 'tool1', parameters: [] }]);
+
+      expect(result.success).toBe(true);
+      expect(result.registered_tools).toEqual([]);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+});

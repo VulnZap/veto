@@ -38,6 +38,8 @@ import type { KernelConfig, KernelToolCall } from '../kernel/types.js';
 import { KernelClient } from '../kernel/client.js';
 import type { CustomConfig, CustomToolCall, CustomResponse } from '../custom/types.js';
 import { CustomClient } from '../custom/client.js';
+import type { VetoCloudConfig, ApprovalPollOptions } from '../cloud/types.js';
+import { VetoCloudClient, ApprovalTimeoutError } from '../cloud/client.js';
 
 /**
  * Veto operating mode.
@@ -51,8 +53,9 @@ export type VetoMode = 'strict' | 'log';
  * - "api": Use external HTTP API for validation
  * - "kernel": Use local kernel model via Ollama
  * - "custom": Use custom LLM provider (OpenAI, Anthropic, Gemini, OpenRouter)
+ * - "cloud": Use Veto Cloud API with approval workflow support
  */
-export type ValidationMode = 'api' | 'kernel' | 'custom';
+export type ValidationMode = 'api' | 'kernel' | 'custom' | 'cloud';
 
 /**
  * Wrapped handler function type.
@@ -100,6 +103,17 @@ interface VetoConfigFile {
     maxTokens?: number;
     timeout?: number;
     baseUrl?: string;
+  };
+  cloud?: {
+    apiKey?: string;
+    baseUrl?: string;
+    timeout?: number;
+    retries?: number;
+    retryDelay?: number;
+  };
+  approval?: {
+    pollInterval?: number;
+    timeout?: number;
   };
   logging?: {
     level?: LogLevel;
@@ -163,6 +177,21 @@ export interface VetoOptions {
    * Injected kernel client for testing or custom configurations.
    */
   kernelClient?: KernelClient;
+
+  /**
+   * Injected cloud client for testing or custom configurations.
+   */
+  cloudClient?: VetoCloudClient;
+
+  /**
+   * Hook called when a tool call requires human approval.
+   * Use this to display approval UI to the user.
+   * The SDK blocks until the approval is resolved on the server.
+   */
+  onApprovalRequired?: (
+    context: ValidationContext,
+    approvalId: string
+  ) => void | Promise<void>;
 }
 
 /**
@@ -210,6 +239,18 @@ export class Veto {
   // Custom provider client (lazy initialized)
   private customClient: CustomClient | null = null;
   private readonly customConfig: CustomConfig | null;
+
+  // Cloud client (lazy initialized or injected)
+  private cloudClient: VetoCloudClient | null = null;
+  private readonly cloudConfig: VetoCloudConfig | null;
+  private readonly approvalPollOptions: ApprovalPollOptions;
+  private readonly onApprovalRequired?: (
+    context: ValidationContext,
+    approvalId: string
+  ) => void | Promise<void>;
+
+  // Approval preference cache: tool name -> 'approve_all' | 'deny_all'
+  private readonly approvalPreferences = new Map<string, 'approve_all' | 'deny_all'>();
 
   // Loaded rules
   private readonly rules: LoadedRulesState;
@@ -270,6 +311,33 @@ export class Veto {
       this.customConfig = null;
     }
 
+    // Resolve cloud configuration
+    if (this.validationMode === 'cloud') {
+      this.cloudConfig = {
+        apiKey: config.cloud?.apiKey,
+        baseUrl: config.cloud?.baseUrl,
+        timeout: config.cloud?.timeout,
+        retries: config.cloud?.retries,
+        retryDelay: config.cloud?.retryDelay,
+      };
+    } else {
+      this.cloudConfig = null;
+    }
+
+    // Use injected cloud client if provided
+    if (options.cloudClient) {
+      this.cloudClient = options.cloudClient;
+    }
+
+    // Approval polling options
+    this.approvalPollOptions = {
+      pollInterval: config.approval?.pollInterval,
+      timeout: config.approval?.timeout,
+    };
+
+    // Approval hook
+    this.onApprovalRequired = options.onApprovalRequired;
+
     // Resolve tracking options
     this.sessionId = options.sessionId ?? process.env.VETO_SESSION_ID;
     this.agentId = options.agentId ?? process.env.VETO_AGENT_ID;
@@ -282,6 +350,7 @@ export class Veto {
       kernelModel: this.kernelConfig?.model,
       customProvider: this.customConfig?.provider,
       customModel: this.customConfig?.model,
+      cloudBaseUrl: this.cloudConfig?.baseUrl,
       rulesLoaded: rules.allRules.length,
     });
 
@@ -299,13 +368,17 @@ export class Veto {
         ? 'Validates tool calls via local kernel model'
         : this.validationMode === 'custom'
           ? `Validates tool calls via ${this.customConfig?.provider ?? 'custom'} LLM`
-          : 'Validates tool calls via external API',
+          : this.validationMode === 'cloud'
+            ? 'Validates tool calls via Veto Cloud API'
+            : 'Validates tool calls via external API',
       priority: 50,
       validate: (ctx) => {
         if (this.validationMode === 'kernel') {
           return this.validateWithKernel(ctx);
         } else if (this.validationMode === 'custom') {
           return this.validateWithCustom(ctx);
+        } else if (this.validationMode === 'cloud') {
+          return this.validateWithCloud(ctx);
         } else {
           return this.validateWithAPI(ctx);
         }
@@ -921,6 +994,223 @@ export class Veto {
   }
 
   /**
+   * Get or create the cloud client.
+   */
+  private getCloudClient(): VetoCloudClient {
+    if (this.cloudClient) {
+      return this.cloudClient;
+    }
+
+    this.cloudClient = new VetoCloudClient({
+      config: this.cloudConfig ?? undefined,
+      logger: this.logger,
+    });
+
+    return this.cloudClient;
+  }
+
+  /**
+   * Validate a tool call with the Veto Cloud API.
+   * Handles require_approval decisions by polling until resolved.
+   */
+  private async validateWithCloud(
+    context: ValidationContext
+  ): Promise<ValidationResult> {
+    const client = this.getCloudClient();
+
+    const apiContext: Record<string, unknown> = {
+      call_id: context.callId,
+      timestamp: context.timestamp.toISOString(),
+      session_id: this.sessionId,
+      agent_id: this.agentId,
+    };
+    if (context.custom) {
+      apiContext.custom = context.custom;
+    }
+
+    try {
+      const response = await client.validate(
+        context.toolName,
+        context.arguments,
+        apiContext
+      );
+
+      const metadata: Record<string, unknown> = {};
+      if (response.failed_constraints) {
+        metadata.failed_constraints = response.failed_constraints;
+      }
+      if (response.metadata) {
+        Object.assign(metadata, response.metadata);
+      }
+
+      // Handle require_approval decision
+      if (
+        response.decision === 'require_approval' &&
+        response.approval_id
+      ) {
+        return this.handleApprovalFlow(
+          context,
+          response.approval_id,
+          response.reason,
+          Object.keys(metadata).length > 0 ? metadata : undefined
+        );
+      }
+
+      if (response.decision === 'allow') {
+        this.logger.debug('Cloud allowed tool call', {
+          tool: context.toolName,
+        });
+        return {
+          decision: 'allow',
+          reason: response.reason,
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        };
+      }
+
+      // Cloud returned deny
+      if (this.mode === 'log') {
+        this.logger.warn('Tool call would be blocked (log mode)', {
+          tool: context.toolName,
+          reason: response.reason,
+        });
+        return {
+          decision: 'allow',
+          reason: `[LOG MODE] Would block: ${response.reason}`,
+          metadata: { ...metadata, blocked_in_strict_mode: true },
+        };
+      }
+
+      this.logger.warn('Tool call blocked by cloud', {
+        tool: context.toolName,
+        reason: response.reason,
+      });
+      return {
+        decision: 'deny',
+        reason: response.reason,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+
+      if (this.mode === 'log') {
+        this.logger.warn('Cloud unavailable (log mode, allowing)', {
+          reason,
+        });
+        return {
+          decision: 'allow',
+          reason: `Cloud unavailable: ${reason}`,
+          metadata: { cloud_error: true },
+        };
+      }
+
+      this.logger.error('Cloud unavailable (strict mode, blocking)', {
+        reason,
+      });
+      return {
+        decision: 'deny',
+        reason: `Cloud unavailable: ${reason}`,
+        metadata: { cloud_error: true },
+      };
+    }
+  }
+
+  /**
+   * Handle the approval flow: fire hook, poll until resolved, return decision.
+   */
+  private async handleApprovalFlow(
+    context: ValidationContext,
+    approvalId: string,
+    reason: string | undefined,
+    metadata: Record<string, unknown> | undefined
+  ): Promise<ValidationResult> {
+    // Check approval preference cache first
+    const cachedPref = this.approvalPreferences.get(context.toolName);
+    if (cachedPref === 'approve_all') {
+      this.logger.info('Auto-approved via cached preference', {
+        tool: context.toolName,
+      });
+      return {
+        decision: 'allow',
+        reason: 'Auto-approved (approve all preference)',
+        metadata,
+      };
+    } else if (cachedPref === 'deny_all') {
+      this.logger.info('Auto-denied via cached preference', {
+        tool: context.toolName,
+      });
+      return {
+        decision: 'deny',
+        reason: 'Auto-denied (deny all preference)',
+        metadata,
+      };
+    }
+
+    this.logger.info('Awaiting human approval', {
+      tool: context.toolName,
+      approval_id: approvalId,
+    });
+
+    // Fire the approval hook so integrating products can show UI
+    if (this.onApprovalRequired) {
+      try {
+        await this.onApprovalRequired(context, approvalId);
+      } catch (error) {
+        this.logger.warn('onApprovalRequired hook threw an error', {
+          approval_id: approvalId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    try {
+      const client = this.getCloudClient();
+      const approvalData = await client.pollApproval(
+        approvalId,
+        this.approvalPollOptions
+      );
+
+      const status = approvalData.status;
+
+      if (status === 'approved') {
+        this.logger.info('Approval granted', {
+          tool: context.toolName,
+          approval_id: approvalId,
+          resolved_by: approvalData.resolvedBy,
+        });
+        return {
+          decision: 'allow',
+          reason: `Approved by human: ${approvalData.resolvedBy ?? 'unknown'}`,
+          metadata,
+        };
+      }
+
+      this.logger.warn('Approval denied or expired', {
+        tool: context.toolName,
+        approval_id: approvalId,
+        status,
+      });
+      return {
+        decision: 'deny',
+        reason: `Approval ${status}: ${reason ?? 'no reason provided'}`,
+        metadata,
+      };
+    } catch (error) {
+      if (error instanceof ApprovalTimeoutError) {
+        this.logger.warn('Approval timed out', {
+          tool: context.toolName,
+          approval_id: approvalId,
+        });
+        return {
+          decision: 'deny',
+          reason: 'Approval timed out waiting for human review',
+          metadata,
+        };
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Build history summary for API.
    */
   private buildHistorySummary(
@@ -1117,6 +1407,48 @@ export class Veto {
   }
 
 
+
+  /**
+   * Cache an approval preference for a tool.
+   *
+   * When set, subsequent require_approval decisions for this tool
+   * are auto-resolved from the cache without polling the server.
+   *
+   * @param toolName - The tool to set the preference for
+   * @param preference - 'approve_all' or 'deny_all'
+   */
+  setApprovalPreference(
+    toolName: string,
+    preference: 'approve_all' | 'deny_all'
+  ): void {
+    this.approvalPreferences.set(toolName, preference);
+    this.logger.info('Approval preference set', {
+      tool: toolName,
+      preference,
+    });
+  }
+
+  /**
+   * Clear cached approval preferences.
+   *
+   * @param toolName - If provided, clear only for this tool. Otherwise clear all.
+   */
+  clearApprovalPreferences(toolName?: string): void {
+    if (toolName) {
+      this.approvalPreferences.delete(toolName);
+    } else {
+      this.approvalPreferences.clear();
+    }
+  }
+
+  /**
+   * Get the cached approval preference for a tool, if any.
+   */
+  getApprovalPreference(
+    toolName: string
+  ): 'approve_all' | 'deny_all' | undefined {
+    return this.approvalPreferences.get(toolName);
+  }
 
   /**
    * Get history statistics.
