@@ -38,7 +38,7 @@ import type { KernelConfig, KernelToolCall } from '../kernel/types.js';
 import { KernelClient } from '../kernel/client.js';
 import type { CustomConfig, CustomToolCall, CustomResponse } from '../custom/types.js';
 import { CustomClient } from '../custom/client.js';
-import type { VetoCloudConfig, ApprovalPollOptions } from '../cloud/types.js';
+import type { VetoCloudConfig, ApprovalPollOptions, CloudToolRegistration } from '../cloud/types.js';
 import { VetoCloudClient, ApprovalTimeoutError } from '../cloud/client.js';
 
 /**
@@ -995,10 +995,8 @@ export class Veto {
 
   /**
    * Get or create the cloud client.
-   *
-   * @internal Used by integration modules for tool registration.
    */
-  getCloudClient(): VetoCloudClient {
+  private getCloudClient(): VetoCloudClient {
     if (this.cloudClient) {
       return this.cloudClient;
     }
@@ -1454,12 +1452,16 @@ export class Veto {
   }
 
   /**
-   * Get the current validation mode.
-   *
-   * @internal Used by integration modules to determine if cloud registration is needed.
+   * Register tool schemas with Veto Cloud for dashboard policy configuration.
+   * No-op if not in cloud mode or if registrations array is empty.
    */
-  getValidationMode(): ValidationMode {
-    return this.validationMode;
+  async registerTools(registrations: CloudToolRegistration[]): Promise<void> {
+    if (this.validationMode !== 'cloud' || registrations.length === 0) return;
+    try {
+      await this.getCloudClient().registerTools(registrations);
+    } catch {
+      this.logger.debug('Cloud tool registration failed (best-effort)');
+    }
   }
 
   /**

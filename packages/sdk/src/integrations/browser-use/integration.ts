@@ -188,17 +188,9 @@ export async function wrapBrowserUse(
 
   const controller = new VetoController();
 
-  // Register tool schemas with Veto Cloud if in cloud mode
-  if (veto.getValidationMode() === 'cloud') {
-    try {
-      const registrations = buildToolRegistrations(controller.registry);
-      if (registrations.length > 0) {
-        await veto.getCloudClient().registerTools(registrations);
-      }
-    } catch {
-      // Registration is best-effort — don't block the controller
-    }
-  }
+  // Register tool schemas with Veto Cloud (no-op if not in cloud mode)
+  const registrations = buildToolRegistrations(controller.registry);
+  await veto.registerTools(registrations);
 
   return controller;
 }
