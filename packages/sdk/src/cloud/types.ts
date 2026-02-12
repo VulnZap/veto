@@ -1,0 +1,110 @@
+/**
+ * Type definitions for Veto Cloud API interactions.
+ *
+ * @module cloud/types
+ */
+
+/**
+ * Configuration for the Veto Cloud client.
+ */
+export interface VetoCloudConfig {
+  /** API key for authentication (sent as X-Veto-API-Key header) */
+  apiKey?: string;
+  /** Base URL of the Veto Cloud API */
+  baseUrl?: string;
+  /** Request timeout in milliseconds */
+  timeout?: number;
+  /** Number of retries on failure */
+  retries?: number;
+  /** Delay between retries in milliseconds */
+  retryDelay?: number;
+}
+
+/**
+ * Resolved cloud configuration with defaults applied.
+ */
+export interface ResolvedCloudConfig {
+  apiKey?: string;
+  baseUrl: string;
+  timeout: number;
+  retries: number;
+  retryDelay: number;
+}
+
+/**
+ * Tool parameter definition for cloud registration.
+ */
+export interface CloudToolParameter {
+  name: string;
+  type: string;
+  description?: string;
+  required?: boolean;
+  enum?: unknown[];
+  minimum?: number;
+  maximum?: number;
+  pattern?: string;
+}
+
+/**
+ * Tool registration payload.
+ */
+export interface CloudToolRegistration {
+  name: string;
+  description?: string;
+  parameters: CloudToolParameter[];
+}
+
+/**
+ * Response from tool registration.
+ */
+export interface CloudToolRegistrationResponse {
+  success: boolean;
+  registered_tools: string[];
+  message?: string;
+}
+
+/**
+ * Details about a constraint that failed validation.
+ */
+export interface FailedConstraint {
+  parameter: string;
+  constraint_type: string;
+  expected: unknown;
+  actual: unknown;
+  message: string;
+}
+
+/**
+ * Response from cloud tool call validation.
+ */
+export interface CloudValidationResponse {
+  decision: 'allow' | 'deny' | 'require_approval';
+  reason?: string;
+  failed_constraints?: FailedConstraint[];
+  metadata?: Record<string, unknown>;
+  approval_id?: string;
+}
+
+/**
+ * Approval record returned from polling.
+ */
+export interface ApprovalData {
+  id: string;
+  toolName: string;
+  arguments?: Record<string, unknown>;
+  status: 'pending' | 'approved' | 'denied' | 'expired';
+  expiresAt?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt?: string;
+}
+
+/**
+ * Options for polling an approval.
+ */
+export interface ApprovalPollOptions {
+  /** Milliseconds between poll requests. Default: 2000 */
+  pollInterval?: number;
+  /** Maximum milliseconds to wait before timing out. Default: 300000 (5 min) */
+  timeout?: number;
+}

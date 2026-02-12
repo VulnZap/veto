@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Veto, ToolCallDeniedError } from '../../src/core/veto.js';
+import { VetoCloudClient } from '../../src/cloud/client.js';
 
 const TEST_DIR = '/tmp/veto-test-' + Date.now();
 const VETO_DIR = join(TEST_DIR, 'veto');
@@ -283,6 +284,293 @@ rules:
         expect(error.message).toContain('Kernel blocked') // Or 'Tool call denied'
       }
       expect(mockKernelClient.evaluate).toHaveBeenCalled();
+    });
+  });
+
+  describe('Integration: Cloud Mode', () => {
+    it('should allow tool call when cloud returns allow', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+cloud:
+  baseUrl: "http://localhost:3001"
+  apiKey: "test-key"
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ decision: 'allow', reason: 'Allowed' }),
+        text: async () => '',
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      const tools = [{ name: 'test_tool', handler: vi.fn().mockResolvedValue('ok'), inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      const result = await wrapped[0].handler({ query: 'test' });
+      expect(result).toBe('ok');
+    });
+
+    it('should deny tool call when cloud returns deny', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+cloud:
+  baseUrl: "http://localhost:3001"
+  apiKey: "test-key"
+  retries: 0
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ decision: 'deny', reason: 'Blocked by policy' }),
+        text: async () => '',
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      const handler = vi.fn();
+      const tools = [{ name: 'blocked', handler, inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await expect(wrapped[0].handler({})).rejects.toThrow('Tool call denied');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should poll approval and allow when approved', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+cloud:
+  baseUrl: "http://localhost:3001"
+  apiKey: "test-key"
+  retries: 0
+approval:
+  pollInterval: 10
+  timeout: 5000
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      // First fetch: validate returns require_approval
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'require_approval',
+          reason: 'Needs review',
+          approval_id: 'appr-001',
+        }),
+        text: async () => '',
+      });
+
+      // Second fetch: poll returns approved
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'appr-001',
+          status: 'approved',
+          resolvedBy: 'admin@corp.com',
+          toolName: 'sensitive_tool',
+        }),
+        text: async () => '',
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      const handler = vi.fn().mockResolvedValue('executed');
+      const tools = [{ name: 'sensitive_tool', handler, inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      const result = await wrapped[0].handler({ data: 'sensitive' });
+      expect(result).toBe('executed');
+      expect(handler).toHaveBeenCalled();
+    });
+
+    it('should poll approval and deny when denied', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+cloud:
+  baseUrl: "http://localhost:3001"
+  apiKey: "test-key"
+  retries: 0
+approval:
+  pollInterval: 10
+  timeout: 5000
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      // validate returns require_approval
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'require_approval',
+          reason: 'Needs review',
+          approval_id: 'appr-002',
+        }),
+        text: async () => '',
+      });
+
+      // poll returns denied
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'appr-002',
+          status: 'denied',
+          resolvedBy: 'admin',
+          toolName: 'dangerous',
+        }),
+        text: async () => '',
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      const handler = vi.fn();
+      const tools = [{ name: 'dangerous', handler, inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await expect(wrapped[0].handler({})).rejects.toThrow('Tool call denied');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should deny when approval times out', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+cloud:
+  baseUrl: "http://localhost:3001"
+  apiKey: "test-key"
+  retries: 0
+approval:
+  pollInterval: 10
+  timeout: 50
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      // validate returns require_approval
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'require_approval',
+          reason: 'Review needed',
+          approval_id: 'appr-003',
+        }),
+        text: async () => '',
+      });
+
+      // Poll always returns pending
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          id: 'appr-003',
+          status: 'pending',
+          toolName: 'test',
+        }),
+        text: async () => '',
+      });
+
+      const veto = await Veto.init({ configDir: VETO_DIR });
+      const handler = vi.fn();
+      const tools = [{ name: 'test', handler, inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await expect(wrapped[0].handler({})).rejects.toThrow('Tool call denied');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should fire onApprovalRequired hook', async () => {
+      writeFileSync(
+        join(VETO_DIR, 'veto.config.yaml'),
+        `
+version: "1.0"
+mode: "strict"
+validation:
+  mode: "cloud"
+cloud:
+  baseUrl: "http://localhost:3001"
+  apiKey: "test-key"
+  retries: 0
+approval:
+  pollInterval: 10
+logging:
+  level: "silent"
+`,
+        'utf-8'
+      );
+
+      // validate returns require_approval
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          decision: 'require_approval',
+          reason: 'Needs human',
+          approval_id: 'appr-004',
+        }),
+        text: async () => '',
+      });
+
+      // poll returns approved
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'appr-004',
+          status: 'approved',
+          resolvedBy: 'user',
+          toolName: 'tool',
+        }),
+        text: async () => '',
+      });
+
+      const onApprovalRequired = vi.fn();
+
+      const veto = await Veto.init({
+        configDir: VETO_DIR,
+        onApprovalRequired,
+      });
+
+      const tools = [{ name: 'tool', handler: vi.fn().mockResolvedValue('ok'), inputSchema: {} }];
+      const wrapped = veto.wrap(tools);
+
+      await wrapped[0].handler({});
+
+      expect(onApprovalRequired).toHaveBeenCalledOnce();
+      expect(onApprovalRequired).toHaveBeenCalledWith(
+        expect.objectContaining({ toolName: 'tool' }),
+        'appr-004'
+      );
     });
   });
 });
