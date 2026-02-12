@@ -1,6 +1,5 @@
-import type { Veto } from '../../core/veto.js';
+import { ToolCallDeniedError, type Veto } from '../../core/veto.js';
 import type { CloudToolRegistration, CloudToolParameter } from '../../cloud/types.js';
-import { generateToolCallId } from '../../utils/id.js';
 
 /**
  * Default browser-use-node actions validated through Veto.
@@ -144,6 +143,18 @@ export async function wrapBrowserUse(
   const { Controller, ActionResult } = browserUse;
   const actionsToValidate = options?.validatedActions ?? DEFAULT_VALIDATED_ACTIONS;
 
+  // Create wrapped tool handlers via veto.wrap() — keeps validateToolCall private
+  const actionTools = [...actionsToValidate].map(name => ({
+    name,
+    handler: async (_params: Record<string, unknown>) => {},
+  }));
+  const wrappedTools = veto.wrap(actionTools);
+  const wrappedHandlers = new Map(
+    wrappedTools.map((t: { name: string; handler: (params: Record<string, unknown>) => Promise<void> }) =>
+      [t.name, t.handler] as const
+    )
+  );
+
   class VetoController extends Controller {
     async act(action: any, browserContext: any): Promise<any> {
       const actionName = extractActionName(action);
@@ -153,15 +164,20 @@ export async function wrapBrowserUse(
         return super.act(action, browserContext);
       }
 
-      try {
-        const result = await veto.validateToolCall({
-          id: generateToolCallId(),
-          name: actionName,
-          arguments: params,
-        });
+      const wrappedHandler = wrappedHandlers.get(actionName);
+      if (!wrappedHandler) {
+        return super.act(action, browserContext);
+      }
 
-        if (!result.allowed) {
-          const reason = result.validationResult.reason ?? 'Policy violation';
+      try {
+        await wrappedHandler(params);
+
+        if (options?.onAllow) {
+          await options.onAllow(actionName, params);
+        }
+      } catch (err) {
+        if (err instanceof ToolCallDeniedError) {
+          const reason = err.validationResult?.reason ?? 'Policy violation';
 
           if (options?.onDeny) {
             await options.onDeny(actionName, params, reason);
@@ -172,10 +188,6 @@ export async function wrapBrowserUse(
           });
         }
 
-        if (options?.onAllow) {
-          await options.onAllow(actionName, params);
-        }
-      } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return new ActionResult({
           error: `Veto validation error: ${message}`,

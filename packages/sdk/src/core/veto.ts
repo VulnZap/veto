@@ -1393,12 +1393,8 @@ export class Veto {
 
   /**
    * Validate a tool call through the interceptor pipeline.
-   *
-   * @internal Used by integration modules (e.g. browser-use). Not part of the public API.
-   * @param call - The tool call to validate
-   * @returns Validation result
    */
-  async validateToolCall(call: ToolCall): Promise<InterceptionResult> {
+  private async validateToolCall(call: ToolCall): Promise<InterceptionResult> {
     const normalizedCall: ToolCall = {
       ...call,
       id: call.id || generateToolCallId(),
