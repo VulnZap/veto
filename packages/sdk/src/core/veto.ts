@@ -995,8 +995,10 @@ export class Veto {
 
   /**
    * Get or create the cloud client.
+   *
+   * @internal Used by integration modules for tool registration.
    */
-  private getCloudClient(): VetoCloudClient {
+  getCloudClient(): VetoCloudClient {
     if (this.cloudClient) {
       return this.cloudClient;
     }
@@ -1392,12 +1394,13 @@ export class Veto {
   }
 
   /**
-   * Validate a tool call.
+   * Validate a tool call through the interceptor pipeline.
    *
+   * @internal Used by integration modules (e.g. browser-use). Not part of the public API.
    * @param call - The tool call to validate
    * @returns Validation result
    */
-  private async validateToolCall(call: ToolCall): Promise<InterceptionResult> {
+  async validateToolCall(call: ToolCall): Promise<InterceptionResult> {
     const normalizedCall: ToolCall = {
       ...call,
       id: call.id || generateToolCallId(),
@@ -1448,6 +1451,15 @@ export class Veto {
     toolName: string
   ): 'approve_all' | 'deny_all' | undefined {
     return this.approvalPreferences.get(toolName);
+  }
+
+  /**
+   * Get the current validation mode.
+   *
+   * @internal Used by integration modules to determine if cloud registration is needed.
+   */
+  getValidationMode(): ValidationMode {
+    return this.validationMode;
   }
 
   /**
