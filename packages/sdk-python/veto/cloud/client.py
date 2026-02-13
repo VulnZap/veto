@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import os
 import time
 import asyncio
+from urllib.parse import quote
 import aiohttp
 
 from veto.cloud.types import (
@@ -72,6 +73,22 @@ class VetoCloudClient:
 
         # Track registered tools to avoid duplicate registrations
         self._registered_tools: set[str] = set()
+
+        # Shared session (lazy-initialized)
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self._config.timeout / 1000),
+                headers=self._get_headers(),
+            )
+        return self._session
+
+    async def close(self) -> None:
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     def _log_debug(self, message: str, data: Optional[dict[str, Any]] = None) -> None:
         """Log debug message if logger available."""
@@ -163,38 +180,33 @@ class VetoCloudClient:
 
         for attempt in range(self._config.retries + 1):
             try:
-                timeout = aiohttp.ClientTimeout(
-                    total=self._config.timeout / 1000
-                )
-
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(
-                        url,
-                        json=payload,
-                        headers=self._get_headers(),
-                    ) as response:
-                        if not response.ok:
-                            error_text = await response.text()
-                            raise Exception(
-                                f"API returned status {response.status}: {error_text}"
-                            )
-
-                        data = await response.json()
-
-                        # Mark tools as registered
-                        for tool in new_tools:
-                            self._registered_tools.add(tool.name)
-
-                        self._log_info(
-                            "Tools registered successfully",
-                            {"tools": [t.name for t in new_tools]},
+                session = self._get_session()
+                async with session.post(
+                    url,
+                    json=payload,
+                ) as response:
+                    if not response.ok:
+                        error_text = await response.text()
+                        raise Exception(
+                            f"API returned status {response.status}: {error_text}"
                         )
 
-                        return ToolRegistrationResponse(
-                            success=True,
-                            registered_tools=[t.name for t in new_tools],
-                            message=data.get("message"),
-                        )
+                    data = await response.json()
+
+                    # Mark tools as registered
+                    for tool in new_tools:
+                        self._registered_tools.add(tool.name)
+
+                    self._log_info(
+                        "Tools registered successfully",
+                        {"tools": [t.name for t in new_tools]},
+                    )
+
+                    return ToolRegistrationResponse(
+                        success=True,
+                        registered_tools=[t.name for t in new_tools],
+                        message=data.get("message"),
+                    )
 
             except Exception as error:
                 last_error = error if isinstance(error, Exception) else Exception(str(error))
@@ -259,51 +271,46 @@ class VetoCloudClient:
 
         for attempt in range(self._config.retries + 1):
             try:
-                timeout = aiohttp.ClientTimeout(
-                    total=self._config.timeout / 1000
-                )
-
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(
-                        url,
-                        json=payload,
-                        headers=self._get_headers(),
-                    ) as response:
-                        if not response.ok:
-                            error_text = await response.text()
-                            raise Exception(
-                                f"API returned status {response.status}: {error_text}"
-                            )
-
-                        data = await response.json()
-
-                        decision = data.get("decision", "deny")
-
-                        # Parse failed constraints if present
-                        failed_constraints = []
-                        for fc in data.get("failed_constraints", []):
-                            failed_constraints.append(
-                                FailedConstraint(
-                                    parameter=fc.get("parameter", ""),
-                                    constraint_type=fc.get("constraint_type", ""),
-                                    expected=fc.get("expected"),
-                                    actual=fc.get("actual"),
-                                    message=fc.get("message", ""),
-                                )
-                            )
-
-                        self._log_debug(
-                            "Validation result",
-                            {"tool": tool_name, "decision": decision},
+                session = self._get_session()
+                async with session.post(
+                    url,
+                    json=payload,
+                ) as response:
+                    if not response.ok:
+                        error_text = await response.text()
+                        raise Exception(
+                            f"API returned status {response.status}: {error_text}"
                         )
 
-                        return ValidationResponse(
-                            decision=decision,
-                            reason=data.get("reason"),
-                            failed_constraints=failed_constraints,
-                            metadata=data.get("metadata"),
-                            approval_id=data.get("approval_id"),
+                    data = await response.json()
+
+                    decision = data.get("decision", "deny")
+
+                    # Parse failed constraints if present
+                    failed_constraints = []
+                    for fc in data.get("failed_constraints", []):
+                        failed_constraints.append(
+                            FailedConstraint(
+                                parameter=fc.get("parameter", ""),
+                                constraint_type=fc.get("constraint_type", ""),
+                                expected=fc.get("expected"),
+                                actual=fc.get("actual"),
+                                message=fc.get("message", ""),
+                            )
                         )
+
+                    self._log_debug(
+                        "Validation result",
+                        {"tool": tool_name, "decision": decision},
+                    )
+
+                    return ValidationResponse(
+                        decision=decision,
+                        reason=data.get("reason"),
+                        failed_constraints=failed_constraints,
+                        metadata=data.get("metadata"),
+                        approval_id=data.get("approval_id"),
+                    )
 
             except Exception as error:
                 last_error = error if isinstance(error, Exception) else Exception(str(error))
@@ -357,47 +364,70 @@ class VetoCloudClient:
             {"approval_id": approval_id, "timeout": opts.timeout},
         )
 
-        request_timeout = aiohttp.ClientTimeout(
-            total=self._config.timeout / 1000
-        )
-        async with aiohttp.ClientSession(timeout=request_timeout) as session:
-            while True:
-                try:
-                    async with session.get(
-                        url, headers=self._get_headers()
-                    ) as response:
-                        if not response.ok:
-                            error_text = await response.text()
-                            self._log_warn(
-                                "Approval poll request failed",
-                                {"status": response.status, "error": error_text},
+        session = self._get_session()
+        while True:
+            try:
+                async with session.get(url) as response:
+                    if not response.ok:
+                        error_text = await response.text()
+                        self._log_warn(
+                            "Approval poll request failed",
+                            {"status": response.status, "error": error_text},
+                        )
+                    else:
+                        data: dict[str, Any] = await response.json()
+                        status = data.get("status", "pending")
+
+                        if status != "pending":
+                            self._log_info(
+                                "Approval resolved",
+                                {"approval_id": approval_id, "status": status},
                             )
-                        else:
-                            data: dict[str, Any] = await response.json()
-                            status = data.get("status", "pending")
+                            return ApprovalData(
+                                id=data.get("id", approval_id),
+                                status=status,
+                                tool_name=data.get("toolName"),
+                                resolved_by=data.get("resolvedBy"),
+                            )
 
-                            if status != "pending":
-                                self._log_info(
-                                    "Approval resolved",
-                                    {"approval_id": approval_id, "status": status},
-                                )
-                                return ApprovalData(
-                                    id=data.get("id", approval_id),
-                                    status=status,
-                                    tool_name=data.get("toolName"),
-                                    resolved_by=data.get("resolvedBy"),
-                                )
+            except Exception as error:
+                self._log_warn(
+                    "Approval poll error",
+                    {"approval_id": approval_id, "error": str(error)},
+                )
 
-                except Exception as error:
-                    self._log_warn(
-                        "Approval poll error",
-                        {"approval_id": approval_id, "error": str(error)},
-                    )
+            if time.monotonic() >= deadline:
+                raise ApprovalTimeoutError(approval_id, opts.timeout)
 
-                if time.monotonic() >= deadline:
-                    raise ApprovalTimeoutError(approval_id, opts.timeout)
+            await asyncio.sleep(opts.poll_interval)
 
-                await asyncio.sleep(opts.poll_interval)
+    async def fetch_policy(self, tool_name: str) -> "Optional[dict[str, Any]]":
+        """Fetch a policy for a tool from the server."""
+        url = f"{self._base_url}/v1/policies/{quote(tool_name, safe='')}"
+        try:
+            session = self._get_session()
+            async with session.get(url) as response:
+                if not response.ok:
+                    return None
+                return await response.json()
+        except Exception:
+            return None
+
+    def log_decision(self, request: "dict[str, Any]") -> None:
+        """Fire-and-forget: log a client-side decision to the server."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._do_log_decision(request))
+        except RuntimeError:
+            pass
+
+    async def _do_log_decision(self, request: "dict[str, Any]") -> None:
+        url = f"{self._base_url}/v1/decisions"
+        try:
+            session = self._get_session()
+            await session.post(url, json=request)
+        except Exception:
+            self._log_debug("Failed to log decision", {"tool": request.get("tool_name")})
 
     def is_tool_registered(self, tool_name: str) -> bool:
         """Check if a tool has been registered with the cloud."""

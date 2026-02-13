@@ -16,6 +16,8 @@ import type {
   CloudToolRegistration,
   CloudToolRegistrationResponse,
   CloudValidationResponse,
+  CloudPolicyResponse,
+  LogDecisionRequest,
   ApprovalData,
   ApprovalPollOptions,
 } from './types.js';
@@ -292,6 +294,37 @@ export class VetoCloudClient {
 
       await this.delay(Math.min(pollInterval, remainingTime));
     }
+  }
+
+  async fetchPolicy(toolName: string): Promise<CloudPolicyResponse | null> {
+    const url = `${this.config.baseUrl}/v1/policies/${encodeURIComponent(toolName)}`;
+
+    try {
+      const response = await this.fetchWithTimeout(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      return (await response.json()) as CloudPolicyResponse;
+    } catch {
+      return null;
+    }
+  }
+
+  logDecision(request: LogDecisionRequest): void {
+    const url = `${this.config.baseUrl}/v1/decisions`;
+
+    this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request),
+    }).catch(() => {
+      // Fire-and-forget: errors are intentionally swallowed
+    });
   }
 
   isToolRegistered(toolName: string): boolean {

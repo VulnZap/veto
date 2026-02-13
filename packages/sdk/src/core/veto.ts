@@ -40,6 +40,9 @@ import type { CustomConfig, CustomToolCall, CustomResponse } from '../custom/typ
 import { CustomClient } from '../custom/client.js';
 import type { VetoCloudConfig, ApprovalPollOptions, CloudToolRegistration } from '../cloud/types.js';
 import { VetoCloudClient, ApprovalTimeoutError } from '../cloud/client.js';
+import { PolicyCache } from '../cloud/policy-cache.js';
+import { validateDeterministic } from '../deterministic/validator.js';
+import type { LocalValidationResult } from '../deterministic/types.js';
 
 /**
  * Veto operating mode.
@@ -252,6 +255,9 @@ export class Veto {
   // Approval preference cache: tool name -> 'approve_all' | 'deny_all'
   private readonly approvalPreferences = new Map<string, 'approve_all' | 'deny_all'>();
 
+  // Client-side deterministic validation cache
+  private readonly policyCache: PolicyCache | null = null;
+
   // Loaded rules
   private readonly rules: LoadedRulesState;
 
@@ -327,6 +333,11 @@ export class Veto {
     // Use injected cloud client if provided
     if (options.cloudClient) {
       this.cloudClient = options.cloudClient;
+    }
+
+    // Initialize policy cache for client-side deterministic validation
+    if (this.validationMode === 'cloud') {
+      this.policyCache = new PolicyCache(this.getCloudClient());
     }
 
     // Approval polling options
@@ -1010,12 +1021,84 @@ export class Veto {
   }
 
   /**
+   * Try client-side deterministic validation for a tool call.
+   * Returns null if the policy is not eligible for local validation.
+   */
+  private tryLocalDeterministic(
+    toolName: string,
+    args: Record<string, unknown>
+  ): LocalValidationResult | null {
+    if (!this.policyCache) return null;
+
+    const policy = this.policyCache.get(toolName);
+    if (!policy) return null;
+
+    if (policy.mode !== 'deterministic') return null;
+    if (policy.hasSessionConstraints || policy.hasRateLimits) return null;
+
+    const result = validateDeterministic(toolName, args, policy.constraints);
+
+    this.getCloudClient().logDecision({
+      tool_name: toolName,
+      arguments: args,
+      decision: result.decision,
+      reason: result.reason,
+      mode: 'deterministic',
+      latency_ms: result.latencyMs,
+      source: 'client',
+      context: {
+        session_id: this.sessionId,
+        agent_id: this.agentId,
+      },
+    });
+
+    return result;
+  }
+
+  /**
    * Validate a tool call with the Veto Cloud API.
    * Handles require_approval decisions by polling until resolved.
    */
   private async validateWithCloud(
     context: ValidationContext
   ): Promise<ValidationResult> {
+    // Fast path: try client-side deterministic validation
+    const localResult = this.tryLocalDeterministic(
+      context.toolName,
+      context.arguments
+    );
+    if (localResult) {
+      if (localResult.decision === 'allow') {
+        this.logger.debug('Local deterministic validation allowed', {
+          tool: context.toolName,
+          latencyMs: localResult.latencyMs,
+        });
+        return { decision: 'allow', reason: localResult.reason };
+      }
+
+      if (this.mode === 'log') {
+        this.logger.warn('Tool call would be blocked locally (log mode)', {
+          tool: context.toolName,
+          reason: localResult.reason,
+        });
+        return {
+          decision: 'allow',
+          reason: `[LOG MODE] Would block: ${localResult.reason}`,
+          metadata: { blocked_in_strict_mode: true, source: 'client' },
+        };
+      }
+
+      this.logger.warn('Tool call blocked by local deterministic validation', {
+        tool: context.toolName,
+        reason: localResult.reason,
+      });
+      return {
+        decision: 'deny',
+        reason: localResult.reason,
+        metadata: { source: 'client' },
+      };
+    }
+
     const client = this.getCloudClient();
 
     const apiContext: Record<string, unknown> = {

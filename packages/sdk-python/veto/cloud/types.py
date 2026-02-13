@@ -94,3 +94,29 @@ class ApprovalPollOptions:
 
     poll_interval: float = 2.0  # seconds between polls
     timeout: float = 300.0  # max seconds to wait
+
+
+@dataclass
+class CloudPolicyResponse:
+    """Policy data returned from the server for client-side validation."""
+
+    tool_name: str
+    mode: Literal["deterministic", "llm"]
+    constraints: list[dict[str, Any]]
+    version: int
+    session_constraints: Optional[Any] = None
+    rate_limits: Optional[Any] = None
+
+
+@dataclass
+class LogDecisionRequest:
+    """Request payload for logging a client-side decision to the server."""
+
+    tool_name: str
+    arguments: dict[str, Any]
+    decision: Literal["allow", "deny"]
+    mode: Literal["deterministic"] = "deterministic"
+    latency_ms: float = 0.0
+    source: Literal["client"] = "client"
+    reason: Optional[str] = None
+    context: Optional[dict[str, Any]] = None
