@@ -53,29 +53,31 @@ export class PolicyCache {
     this.refreshing.add(toolName);
     // Defer to macrotask to avoid interfering with the current validation's fetch
     setTimeout(() => {
-    this.client.fetchPolicy(toolName)
-      .then((response) => {
-        if (!response) return;
+      this.client.fetchPolicy(toolName)
+        .then((response) => {
+          if (!response) return;
 
-        const now = Date.now();
-        const policy: DeterministicPolicy = {
-          toolName: response.toolName,
-          mode: response.mode,
-          constraints: response.constraints ?? [],
-          hasSessionConstraints: response.sessionConstraints != null,
-          hasRateLimits: response.rateLimits != null,
-          version: response.version,
-          fetchedAt: now,
-        };
+          const now = Date.now();
+          const policy: DeterministicPolicy = {
+            toolName: response.toolName,
+            mode: response.mode,
+            constraints: response.constraints ?? [],
+            hasSessionConstraints: response.sessionConstraints != null,
+            hasRateLimits: response.rateLimits != null,
+            version: response.version,
+            fetchedAt: now,
+          };
 
-        this.cache.set(toolName, {
-          policy,
-          staleAt: now + this.freshMs,
-          expiredAt: now + this.maxMs,
-        });
-      })
-      .catch(() => {})
-      .finally(() => this.refreshing.delete(toolName));
+          this.cache.set(toolName, {
+            policy,
+            staleAt: now + this.freshMs,
+            expiredAt: now + this.maxMs,
+          });
+        })
+        .catch(() => {
+          // Background refresh failed — will retry on next cache access
+        })
+        .finally(() => this.refreshing.delete(toolName));
     }, 0);
   }
 }

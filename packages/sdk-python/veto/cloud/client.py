@@ -417,7 +417,7 @@ class VetoCloudClient:
         """Fire-and-forget: log a client-side decision to the server."""
         try:
             loop = asyncio.get_running_loop()
-            loop.call_soon(lambda: asyncio.ensure_future(self._do_log_decision(request)))
+            loop.create_task(self._do_log_decision(request))
         except RuntimeError:
             pass
 
@@ -427,7 +427,7 @@ class VetoCloudClient:
             session = self._get_session()
             await session.post(url, json=request)
         except Exception:
-            pass
+            self._log_debug("Failed to log decision", {"tool": request.get("tool_name")})
 
     def is_tool_registered(self, tool_name: str) -> bool:
         """Check if a tool has been registered with the cloud."""

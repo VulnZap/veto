@@ -15,6 +15,14 @@ class PolicyCache:
         fresh_seconds: float = 60.0,
         max_seconds: float = 300.0,
     ):
+        if fresh_seconds <= 0:
+            raise ValueError(f"fresh_seconds must be positive, got {fresh_seconds}")
+        if max_seconds <= 0:
+            raise ValueError(f"max_seconds must be positive, got {max_seconds}")
+        if fresh_seconds > max_seconds:
+            raise ValueError(
+                f"fresh_seconds ({fresh_seconds}) must be <= max_seconds ({max_seconds})"
+            )
         self._client = client
         self._fresh_seconds = fresh_seconds
         self._max_seconds = max_seconds
@@ -51,15 +59,9 @@ class PolicyCache:
 
         self._refreshing.add(tool_name)
 
-        def _schedule() -> None:
-            try:
-                asyncio.ensure_future(self._do_refresh(tool_name))
-            except Exception:
-                self._refreshing.discard(tool_name)
-
         try:
             loop = asyncio.get_running_loop()
-            loop.call_soon(_schedule)
+            loop.create_task(self._do_refresh(tool_name))
         except RuntimeError:
             self._refreshing.discard(tool_name)
 

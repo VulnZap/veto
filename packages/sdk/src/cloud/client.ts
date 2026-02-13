@@ -298,17 +298,12 @@ export class VetoCloudClient {
 
   async fetchPolicy(toolName: string): Promise<CloudPolicyResponse | null> {
     const url = `${this.config.baseUrl}/v1/policies/${encodeURIComponent(toolName)}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      const response = await fetch(url, {
+      const response = await this.fetchWithTimeout(url, {
         method: 'GET',
         headers: this.getHeaders(),
-        signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         return null;
@@ -316,7 +311,6 @@ export class VetoCloudClient {
 
       return (await response.json()) as CloudPolicyResponse;
     } catch {
-      clearTimeout(timeoutId);
       return null;
     }
   }
@@ -324,17 +318,13 @@ export class VetoCloudClient {
   logDecision(request: LogDecisionRequest): void {
     const url = `${this.config.baseUrl}/v1/decisions`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    fetch(url, {
+    this.fetchWithTimeout(url, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(request),
-      signal: controller.signal,
-    })
-      .then(() => clearTimeout(timeoutId))
-      .catch(() => clearTimeout(timeoutId));
+    }).catch(() => {
+      // Fire-and-forget: errors are intentionally swallowed
+    });
   }
 
   isToolRegistered(toolName: string): boolean {
