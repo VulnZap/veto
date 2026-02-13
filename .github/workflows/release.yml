@@ -61,7 +61,9 @@ jobs:
         id: changesets
         uses: changesets/action@v1
         with:
-          version: pnpm changeset version
+          # Custom version script: runs changeset version + syncs Python SDK version
+          # This ensures the "Version Packages" PR includes the pyproject.toml bump
+          version: node scripts/version.mjs
           publish: pnpm release
           commit: "chore: release packages"
           title: "chore: release packages"
@@ -69,23 +71,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.VETO_PAT }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Bump Python SDK version to match npm minor
-        if: steps.changesets.outputs.published == 'true'
-        run: |
-          NPM_VERSION=$(node -p "require('./packages/sdk/package.json').version")
-          NPM_MINOR=$(echo "$NPM_VERSION" | cut -d. -f2)
-          CURRENT_PY=$(grep -m1 'version = ' packages/sdk-python/pyproject.toml | cut -d'"' -f2)
-          NEW_PY="0.${NPM_MINOR}.0"
-          if [ "$CURRENT_PY" != "$NEW_PY" ]; then
-            sed -i "s/version = \"$CURRENT_PY\"/version = \"$NEW_PY\"/" packages/sdk-python/pyproject.toml
-            git add packages/sdk-python/pyproject.toml
-            git commit -m "chore: bump Python SDK to $NEW_PY"
-            git push origin master
-            echo "Bumped Python SDK from $CURRENT_PY to $NEW_PY"
-          else
-            echo "Python SDK already at $NEW_PY"
-          fi
 
       - name: Publish Python SDK to PyPI
         if: steps.changesets.outputs.published == 'true'
