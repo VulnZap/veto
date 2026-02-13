@@ -409,7 +409,8 @@ class VetoCloudClient:
             async with session.get(url) as response:
                 if not response.ok:
                     return None
-                return await response.json()
+                data: dict[str, Any] = await response.json()
+                return data
         except Exception:
             return None
 
