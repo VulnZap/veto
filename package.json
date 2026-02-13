@@ -18,7 +18,7 @@
     "build:sdk": "pnpm --filter veto-sdk build",
     "build:web": "pnpm --filter @veto/web build",
     "changeset": "changeset",
-    "version": "changeset version",
+    "version": "node scripts/version.mjs",
     "release": "pnpm build && changeset publish",
     "prepare": "husky"
   },
